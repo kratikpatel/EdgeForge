@@ -58,13 +58,52 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, []);
-  const [status] = useState({
+  const [status, setStatus] = useState({
     uptimeSec: "—",
     requestsTotal: "—",
     errorsTotal: "—",
     rateLimitedTotal: "—",
     activeSimulations: "—",
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId = null;
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/status`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+
+        setStatus({
+          uptimeSec: data?.uptimeSec ?? "—",
+          requestsTotal: data?.requestsTotal ?? "—",
+          errorsTotal: data?.errorsTotal ?? "—",
+          rateLimitedTotal: data?.rateLimitedTotal ?? "—",
+          activeSimulations: data?.activeSimulations ?? "—",
+        });
+      } catch {
+        if (cancelled) return;
+        setStatus({
+          uptimeSec: "—",
+          requestsTotal: "—",
+          errorsTotal: "—",
+          rateLimitedTotal: "—",
+          activeSimulations: "—",
+        });
+      }
+    }
+
+    fetchStatus();
+    intervalId = setInterval(fetchStatus, 1500);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
   const [lastResponse] = useState(null);
 
   return (
