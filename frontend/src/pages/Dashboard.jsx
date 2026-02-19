@@ -104,7 +104,37 @@ export default function Dashboard() {
       if (intervalId) clearInterval(intervalId);
     };
   }, []);
-  const [lastResponse] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const [lastResponse, setLastResponse] = useState(null);
+
+  async function sendTestRequest() {
+    setSending(true);
+    setSendError("");
+    setLastResponse(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          route: "/orders",
+          payload: { orderId: "123" },
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+
+      setLastResponse(data);
+    } catch (e) {
+      setSendError(e.message || "Request failed");
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "#f9fafb" }}>
@@ -180,17 +210,30 @@ export default function Dashboard() {
             <button
               style={{
                 border: "1px solid #111827",
-                background: "#111827",
+                background: sending ? "#374151" : "#111827",
                 color: "white",
                 padding: "10px 14px",
                 borderRadius: 10,
-                cursor: "not-allowed",
+                cursor: sending ? "not-allowed" : "pointer",
+                opacity: sending ? 0.85 : 1,
               }}
-              disabled
-              title="Implemented in FE-5"
+              onClick={sendTestRequest}
+              disabled={sending}
             >
-              Send Test Request (Coming in FE-5)
+              {sending ? "Sending..." : "Send Test Request"}
             </button>
+
+            {sendError && (
+              <div style={{ marginTop: 10, color: "#b91c1c", fontSize: 14 }}>
+                Error: {sendError}
+              </div>
+            )}
+
+            {lastResponse?.requestId && (
+              <div style={{ marginTop: 10, color: "#065f46", fontSize: 14 }}>
+                requestId: <code>{lastResponse.requestId}</code>
+              </div>
+            )}
 
             <div style={{ marginTop: 14 }}>
               <div
