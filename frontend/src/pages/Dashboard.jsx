@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { API_BASE } from "../config";
 
 function Card({ title, children }) {
   return (
@@ -27,7 +28,36 @@ function Card({ title, children }) {
 }
 
 export default function Dashboard() {
-  const [healthText] = useState("Unknown");
+  const [health, setHealth] = useState({
+    state: "loading",
+    message: "Checking...",
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/health`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+
+        setHealth({
+          state: "up",
+          message: data?.status === "ok" ? "UP" : "UP (unexpected payload)",
+        });
+      } catch {
+        if (cancelled) return;
+        setHealth({ state: "down", message: "DOWN" });
+      }
+    }
+
+    checkHealth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [status] = useState({
     uptimeSec: "—",
     requestsTotal: "—",
@@ -58,15 +88,21 @@ export default function Dashboard() {
                   width: 10,
                   height: 10,
                   borderRadius: 999,
-                  background: "#9ca3af",
+                  background:
+                    health.state === "up"
+                      ? "#22c55e"
+                      : health.state === "down"
+                        ? "#ef4444"
+                        : "#9ca3af",
                 }}
               />
-              <span>{healthText}</span>
+              <span style={{ fontWeight: 700 }}>{health.message}</span>
             </div>
             <div
               style={{ marginTop: 10, color: "#6b7280", fontSize: 13 }}
             >
-              Endpoint: <code>GET /health</code>
+              {API_BASE} <span style={{ marginLeft: 8 }}>|</span>{" "}
+              <code>GET /health</code>
             </div>
           </Card>
 
