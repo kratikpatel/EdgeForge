@@ -1,4 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { API_BASE } from "../config";
 
 function Card({ title, children }) {
@@ -104,6 +113,41 @@ export default function Dashboard() {
       if (intervalId) clearInterval(intervalId);
     };
   }, []);
+  const [metricsHistory, setMetricsHistory] = useState([]);
+  const prevRequests = useRef(null);
+  const prevErrors = useRef(null);
+  const prevRateLimited = useRef(null);
+
+  useEffect(() => {
+    if (status.requestsTotal === "—") return;
+
+    const now = new Date().toLocaleTimeString();
+    const reqs = Number(status.requestsTotal);
+    const errs = Number(status.errorsTotal);
+    const rl = Number(status.rateLimitedTotal);
+
+    const reqsPerSec =
+      prevRequests.current !== null
+        ? Math.max(0, Math.round(((reqs - prevRequests.current) / 1.5) * 10) / 10)
+        : 0;
+    const errsPerSec =
+      prevErrors.current !== null
+        ? Math.max(0, Math.round(((errs - prevErrors.current) / 1.5) * 10) / 10)
+        : 0;
+    const rlPerSec =
+      prevRateLimited.current !== null
+        ? Math.max(0, Math.round(((rl - prevRateLimited.current) / 1.5) * 10) / 10)
+        : 0;
+
+    prevRequests.current = reqs;
+    prevErrors.current = errs;
+    prevRateLimited.current = rl;
+
+    setMetricsHistory((prev) =>
+      [...prev, { time: now, reqsPerSec, errsPerSec, rlPerSec }].slice(-30)
+    );
+  }, [status]);
+
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [lastResponse, setLastResponse] = useState(null);
@@ -523,6 +567,69 @@ export default function Dashboard() {
               </button>
             )}
           </Card>
+
+          {/* Real-Time Charts */}
+          <Card title="Requests / sec">
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={metricsHistory}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Area
+                  type="monotone"
+                  dataKey="reqsPerSec"
+                  name="Requests/s"
+                  stroke="#3b82f6"
+                  fill="#dbeafe"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+            }}
+          >
+            <Card title="Errors / sec">
+              <ResponsiveContainer width="100%" height={160}>
+                <AreaChart data={metricsHistory}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="errsPerSec"
+                    name="Errors/s"
+                    stroke="#ef4444"
+                    fill="#fef2f2"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Card>
+
+            <Card title="Rate Limited / sec">
+              <ResponsiveContainer width="100%" height={160}>
+                <AreaChart data={metricsHistory}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="rlPerSec"
+                    name="Rate Limited/s"
+                    stroke="#d97706"
+                    fill="#fffbeb"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
