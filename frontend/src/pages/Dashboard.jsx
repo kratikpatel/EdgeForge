@@ -107,11 +107,14 @@ export default function Dashboard() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [lastResponse, setLastResponse] = useState(null);
+  const [requestLog, setRequestLog] = useState([]);
 
   async function sendTestRequest() {
     setSending(true);
     setSendError("");
     setLastResponse(null);
+
+    const start = Date.now();
 
     try {
       const res = await fetch(`${API_BASE}/api/v1/request`, {
@@ -123,14 +126,41 @@ export default function Dashboard() {
         }),
       });
 
+      const latency = Date.now() - start;
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
 
       setLastResponse(data);
+      setRequestLog((prev) =>
+        [
+          {
+            id: data.requestId || crypto.randomUUID(),
+            routedTo: data.routedTo || "—",
+            status: res.status,
+            latency,
+            time: new Date().toLocaleTimeString(),
+          },
+          ...prev,
+        ].slice(0, 100)
+      );
     } catch (e) {
+      const latency = Date.now() - start;
       setSendError(e.message || "Request failed");
+      setRequestLog((prev) =>
+        [
+          {
+            id: crypto.randomUUID().slice(0, 16),
+            routedTo: "—",
+            status: "error",
+            latency,
+            time: new Date().toLocaleTimeString(),
+          },
+          ...prev,
+        ].slice(0, 100)
+      );
     } finally {
       setSending(false);
     }
@@ -376,6 +406,121 @@ export default function Dashboard() {
                   <div style={{ fontSize: 18, fontWeight: 700, color: "#d97706" }}>{simResults.rateLimited}</div>
                 </div>
               </div>
+            )}
+          </Card>
+
+          {/* Live Request Log */}
+          <Card title={`Live Request Log (${requestLog.length})`}>
+            <div
+              style={{
+                maxHeight: 300,
+                overflowY: "auto",
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background: "#f9fafb",
+                      position: "sticky",
+                      top: 0,
+                    }}
+                  >
+                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Time</th>
+                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Request ID</th>
+                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Routed To</th>
+                    <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb" }}>Status</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid #e5e7eb" }}>Latency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {requestLog.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        style={{
+                          padding: 20,
+                          textAlign: "center",
+                          color: "#9ca3af",
+                        }}
+                      >
+                        No requests yet. Send a test request to see logs here.
+                      </td>
+                    </tr>
+                  ) : (
+                    requestLog.map((entry, i) => (
+                      <tr
+                        key={i}
+                        style={{ borderBottom: "1px solid #f3f4f6" }}
+                      >
+                        <td style={{ padding: "6px 10px", color: "#6b7280" }}>{entry.time}</td>
+                        <td style={{ padding: "6px 10px" }}>
+                          <code style={{ fontSize: 12 }}>{entry.id}</code>
+                        </td>
+                        <td style={{ padding: "6px 10px" }}>{entry.routedTo}</td>
+                        <td style={{ padding: "6px 10px", textAlign: "center" }}>
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              background:
+                                entry.status === 200
+                                  ? "#ecfdf5"
+                                  : entry.status === 429
+                                    ? "#fffbeb"
+                                    : "#fef2f2",
+                              color:
+                                entry.status === 200
+                                  ? "#065f46"
+                                  : entry.status === 429
+                                    ? "#92400e"
+                                    : "#b91c1c",
+                            }}
+                          >
+                            {entry.status}
+                          </span>
+                        </td>
+                        <td
+                          style={{
+                            padding: "6px 10px",
+                            textAlign: "right",
+                            color: "#6b7280",
+                          }}
+                        >
+                          {entry.latency}ms
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {requestLog.length > 0 && (
+              <button
+                onClick={() => setRequestLog([])}
+                style={{
+                  marginTop: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "white",
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontSize: 12,
+                  color: "#6b7280",
+                }}
+              >
+                Clear Log
+              </button>
             )}
           </Card>
         </div>
