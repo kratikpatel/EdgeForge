@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"time"
 
 	"edgeforge/backend/internal/loadbalancer"
 	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/middleware"
+	"edgeforge/backend/internal/ratelimiter"
 	"edgeforge/backend/internal/registry"
 )
 
@@ -78,10 +80,19 @@ func checkInstanceHealth(client *http.Client, baseURL string) bool {
 	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
+func getClientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 func main() {
 	m := metrics.New()
 	serviceRegistry := registry.New()
 	rr := loadbalancer.NewRoundRobin()
+	rl := ratelimiter.New(5, 10*time.Second)
 	httpClient := &http.Client{
 		Timeout: 2 * time.Second,
 	}
@@ -108,6 +119,15 @@ func main() {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
 				"error": "method_not_allowed",
+			})
+			return
+		}
+
+		clientIP := getClientIP(r)
+		if !rl.Allow(clientIP) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{
+				"error":   "rate_limit_exceeded",
+				"message": "too many requests from this client",
 			})
 			return
 		}
