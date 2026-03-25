@@ -21,11 +21,21 @@ func New() *ServiceRegistry {
 					URL:     "http://localhost:9001",
 					Healthy: true,
 				},
+				{
+					Name:    "orders-service-2",
+					URL:     "http://localhost:9002",
+					Healthy: true,
+				},
 			},
 			"analytics": {
 				{
 					Name:    "analytics-service-1",
 					URL:     "http://localhost:9011",
+					Healthy: true,
+				},
+				{
+					Name:    "analytics-service-2",
+					URL:     "http://localhost:9012",
 					Healthy: true,
 				},
 			},
