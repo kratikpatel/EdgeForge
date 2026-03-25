@@ -1,6 +1,9 @@
 package registry
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 type ServiceInstance struct {
 	Name    string `json:"name"`
@@ -9,6 +12,7 @@ type ServiceInstance struct {
 }
 
 type ServiceRegistry struct {
+	mu       sync.RWMutex
 	services map[string][]ServiceInstance
 }
 
@@ -44,11 +48,17 @@ func New() *ServiceRegistry {
 }
 
 func (r *ServiceRegistry) GetInstances(serviceName string) ([]ServiceInstance, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	instances, ok := r.services[serviceName]
 	if !ok {
 		return nil, fmt.Errorf("service %q not found", serviceName)
 	}
-	return instances, nil
+
+	copied := make([]ServiceInstance, len(instances))
+	copy(copied, instances)
+	return copied, nil
 }
 
 func (r *ServiceRegistry) GetHealthyInstances(serviceName string) ([]ServiceInstance, error) {
@@ -72,5 +82,35 @@ func (r *ServiceRegistry) GetHealthyInstances(serviceName string) ([]ServiceInst
 }
 
 func (r *ServiceRegistry) GetAll() map[string][]ServiceInstance {
-	return r.services
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	copied := make(map[string][]ServiceInstance, len(r.services))
+	for serviceName, instances := range r.services {
+		instanceCopy := make([]ServiceInstance, len(instances))
+		copy(instanceCopy, instances)
+		copied[serviceName] = instanceCopy
+	}
+
+	return copied
+}
+
+func (r *ServiceRegistry) SetInstanceHealth(serviceName, instanceName string, healthy bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	instances, ok := r.services[serviceName]
+	if !ok {
+		return fmt.Errorf("service %q not found", serviceName)
+	}
+
+	for i := range instances {
+		if instances[i].Name == instanceName {
+			instances[i].Healthy = healthy
+			r.services[serviceName] = instances
+			return nil
+		}
+	}
+
+	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
 }
