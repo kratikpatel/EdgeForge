@@ -151,12 +151,14 @@ export default function Dashboard() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [lastResponse, setLastResponse] = useState(null);
+  const [lastStatus, setLastStatus] = useState(null);
   const [requestLog, setRequestLog] = useState([]);
 
   async function sendTestRequest() {
     setSending(true);
     setSendError("");
     setLastResponse(null);
+    setLastStatus(null);
 
     const start = Date.now();
 
@@ -172,12 +174,16 @@ export default function Dashboard() {
 
       const latency = Date.now() - start;
       const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data?.error || `HTTP ${res.status}`);
-      }
-
+      setLastStatus(res.status);
       setLastResponse(data);
+
+      if (res.status === 429) {
+        setSendError("Rate limited — too many requests. Try again shortly.");
+      } else if (res.status >= 500) {
+        setSendError(`Server error (${res.status}). The backend may be experiencing issues.`);
+      } else if (!res.ok) {
+        setSendError(data?.error || `Request failed with HTTP ${res.status}`);
+      }
       setRequestLog((prev) =>
         [
           {
@@ -192,7 +198,12 @@ export default function Dashboard() {
       );
     } catch (e) {
       const latency = Date.now() - start;
-      setSendError(e.message || "Request failed");
+      setLastStatus("network_error");
+      setSendError(
+        e.message === "Failed to fetch"
+          ? "Cannot reach backend. Is the server running on " + API_BASE + "?"
+          : e.message || "Request failed"
+      );
       setRequestLog((prev) =>
         [
           {
@@ -349,12 +360,32 @@ export default function Dashboard() {
             </button>
 
             {sendError && (
-              <div style={{ marginTop: 10, color: "#b91c1c", fontSize: 14 }}>
-                Error: {sendError}
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  fontSize: 14,
+                  background:
+                    lastStatus === 429
+                      ? "#fffbeb"
+                      : lastStatus === "network_error"
+                        ? "#f3f4f6"
+                        : "#fef2f2",
+                  color:
+                    lastStatus === 429
+                      ? "#92400e"
+                      : lastStatus === "network_error"
+                        ? "#374151"
+                        : "#b91c1c",
+                }}
+              >
+                {lastStatus === 429 ? "Rate Limited: " : lastStatus === "network_error" ? "Offline: " : "Error: "}
+                {sendError}
               </div>
             )}
 
-            {lastResponse?.requestId && (
+            {lastResponse?.requestId && !sendError && (
               <div style={{ marginTop: 10, color: "#065f46", fontSize: 14 }}>
                 requestId: <code>{lastResponse.requestId}</code>
               </div>
