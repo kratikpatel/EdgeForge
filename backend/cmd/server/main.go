@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"edgeforge/backend/internal/metrics"
@@ -49,6 +50,13 @@ func main() {
 	m := metrics.New()
 	serviceRegistry := registry.New()
 	httpClient := &http.Client{}
+
+	var rrMu sync.Mutex
+	roundRobinIndex := map[string]int{
+		"orders":    0,
+		"analytics": 0,
+	}
+
 	mux := http.NewServeMux()
 
 	// Health endpoint
@@ -106,7 +114,11 @@ func main() {
 			return
 		}
 
-		selected := instances[0]
+		rrMu.Lock()
+		currentIndex := roundRobinIndex[serviceName]
+		selected := instances[currentIndex%len(instances)]
+		roundRobinIndex[serviceName] = (currentIndex + 1) % len(instances)
+		rrMu.Unlock()
 
 		forwardURL := selected.URL + "/handle"
 
