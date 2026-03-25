@@ -6,9 +6,9 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
+	"edgeforge/backend/internal/loadbalancer"
 	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/middleware"
 	"edgeforge/backend/internal/registry"
@@ -49,13 +49,8 @@ func resolveServiceName(route string) string {
 func main() {
 	m := metrics.New()
 	serviceRegistry := registry.New()
+	rr := loadbalancer.NewRoundRobin()
 	httpClient := &http.Client{}
-
-	var rrMu sync.Mutex
-	roundRobinIndex := map[string]int{
-		"orders":    0,
-		"analytics": 0,
-	}
 
 	mux := http.NewServeMux()
 
@@ -114,12 +109,7 @@ func main() {
 			return
 		}
 
-		rrMu.Lock()
-		currentIndex := roundRobinIndex[serviceName]
-		selected := instances[currentIndex%len(instances)]
-		roundRobinIndex[serviceName] = (currentIndex + 1) % len(instances)
-		rrMu.Unlock()
-
+		selected := rr.Select(serviceName, instances)
 		forwardURL := selected.URL + "/handle"
 
 		requestBytes, err := json.Marshal(body)
