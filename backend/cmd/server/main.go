@@ -88,6 +88,15 @@ func getClientIP(r *http.Request) string {
 	return host
 }
 
+func writeRateLimitResponse(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "10")
+	writeJSON(w, http.StatusTooManyRequests, map[string]any{
+		"error":      "rate_limit_exceeded",
+		"message":    "too many requests from this client",
+		"statusCode": http.StatusTooManyRequests,
+	})
+}
+
 func main() {
 	m := metrics.New()
 	serviceRegistry := registry.New()
@@ -125,10 +134,7 @@ func main() {
 
 		clientIP := getClientIP(r)
 		if !rl.Allow(clientIP) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]any{
-				"error":   "rate_limit_exceeded",
-				"message": "too many requests from this client",
-			})
+			writeRateLimitResponse(w)
 			return
 		}
 
