@@ -134,6 +134,7 @@ func main() {
 
 		clientIP := getClientIP(r)
 		if !rl.Allow(clientIP) {
+			m.IncRateLimited()
 			writeRateLimitResponse(w)
 			return
 		}
