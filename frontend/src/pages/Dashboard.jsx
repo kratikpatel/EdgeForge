@@ -136,6 +136,56 @@ export default function Dashboard() {
     }
   }
 
+  const [simRunning, setSimRunning] = useState(null);
+  const [simResults, setSimResults] = useState({ total: 0, success: 0, failed: 0, rateLimited: 0 });
+
+  const SIMULATIONS = {
+    normal: { label: "Normal Load", count: 10, delay: 200, route: "/orders" },
+    spike: { label: "Traffic Spike", count: 50, delay: 50, route: "/orders" },
+    abusive: { label: "Abusive Requests", count: 100, delay: 10, route: "/orders" },
+  };
+
+  async function runSimulation(type) {
+    const sim = SIMULATIONS[type];
+    setSimRunning(type);
+    setSimResults({ total: 0, success: 0, failed: 0, rateLimited: 0 });
+
+    const results = { total: 0, success: 0, failed: 0, rateLimited: 0 };
+
+    for (let i = 0; i < sim.count; i++) {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/request`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            route: sim.route,
+            payload: { simType: type, index: i },
+          }),
+        });
+
+        results.total++;
+        if (res.status === 429) {
+          results.rateLimited++;
+        } else if (res.ok) {
+          results.success++;
+        } else {
+          results.failed++;
+        }
+      } catch {
+        results.total++;
+        results.failed++;
+      }
+
+      setSimResults({ ...results });
+
+      if (sim.delay > 0) {
+        await new Promise((r) => setTimeout(r, sim.delay));
+      }
+    }
+
+    setSimRunning(null);
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#f9fafb" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
@@ -262,6 +312,71 @@ export default function Dashboard() {
                   : "—"}
               </pre>
             </div>
+          </Card>
+
+          {/* Traffic Simulation */}
+          <Card title="Traffic Simulation">
+            <p style={{ marginTop: 0, color: "#6b7280" }}>
+              Send bulk requests to simulate different traffic patterns.
+            </p>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {Object.entries(SIMULATIONS).map(([type, sim]) => (
+                <button
+                  key={type}
+                  style={{
+                    border: "1px solid #111827",
+                    background:
+                      simRunning === type
+                        ? "#374151"
+                        : type === "abusive"
+                          ? "#b91c1c"
+                          : type === "spike"
+                            ? "#d97706"
+                            : "#111827",
+                    color: "white",
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    cursor: simRunning ? "not-allowed" : "pointer",
+                    opacity: simRunning && simRunning !== type ? 0.5 : 1,
+                  }}
+                  onClick={() => runSimulation(type)}
+                  disabled={!!simRunning}
+                >
+                  {simRunning === type
+                    ? `Running... (${simResults.total}/${sim.count})`
+                    : `${sim.label} (${sim.count} reqs)`}
+                </button>
+              ))}
+            </div>
+
+            {simResults.total > 0 && (
+              <div
+                style={{
+                  marginTop: 14,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gap: 10,
+                }}
+              >
+                <div style={{ padding: 10, background: "#f3f4f6", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>Total</div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{simResults.total}</div>
+                </div>
+                <div style={{ padding: 10, background: "#ecfdf5", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "#065f46" }}>Success</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#22c55e" }}>{simResults.success}</div>
+                </div>
+                <div style={{ padding: 10, background: "#fef2f2", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "#b91c1c" }}>Failed</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#ef4444" }}>{simResults.failed}</div>
+                </div>
+                <div style={{ padding: 10, background: "#fffbeb", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "#92400e" }}>Rate Limited</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#d97706" }}>{simResults.rateLimited}</div>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       </div>
