@@ -46,11 +46,47 @@ func resolveServiceName(route string) string {
 	}
 }
 
+func startHealthChecks(serviceRegistry *registry.ServiceRegistry, client *http.Client, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+
+	go func() {
+		for range ticker.C {
+			allServices := serviceRegistry.GetAll()
+
+			for serviceName, instances := range allServices {
+				for _, instance := range instances {
+					healthy := checkInstanceHealth(client, instance.URL)
+					if err := serviceRegistry.SetInstanceHealth(serviceName, instance.Name, healthy); err != nil {
+						log.Printf("failed to update health for %s/%s: %v", serviceName, instance.Name, err)
+						continue
+					}
+
+					log.Printf("health check: service=%s instance=%s healthy=%v", serviceName, instance.Name, healthy)
+				}
+			}
+		}
+	}()
+}
+
+func checkInstanceHealth(client *http.Client, baseURL string) bool {
+	resp, err := client.Get(baseURL + "/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
+}
+
 func main() {
 	m := metrics.New()
 	serviceRegistry := registry.New()
 	rr := loadbalancer.NewRoundRobin()
-	httpClient := &http.Client{}
+	httpClient := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+
+	startHealthChecks(serviceRegistry, httpClient, 5*time.Second)
 
 	mux := http.NewServeMux()
 
