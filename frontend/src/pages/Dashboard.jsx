@@ -266,7 +266,8 @@ export default function Dashboard() {
         <header style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>EdgeForge Dashboard</h1>
           <p style={{ marginTop: 6, color: "#6b7280" }}>
-            Sprint 1: Health check, status polling, and request trigger.
+            Sprint 2: Traffic simulation, request logging, and real-time
+            charts.
           </p>
         </header>
 
