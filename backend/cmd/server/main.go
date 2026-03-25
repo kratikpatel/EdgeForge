@@ -136,16 +136,17 @@ func main() {
 			return
 		}
 
-		instances, err := serviceRegistry.GetHealthyInstances(serviceName)
+		healthyInstances, err := serviceRegistry.GetHealthyInstances(serviceName)
 		if err != nil {
 			m.IncErrors()
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": err.Error(),
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error":   "no_healthy_instances",
+				"service": serviceName,
 			})
 			return
 		}
 
-		selected := rr.Select(serviceName, instances)
+		selected := rr.Select(serviceName, healthyInstances)
 		forwardURL := selected.URL + "/handle"
 
 		requestBytes, err := json.Marshal(body)
