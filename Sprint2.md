@@ -30,14 +30,30 @@ We planned to move from a **simulated gateway** to a **real working system**.
 - #13 Add backend API documentation  
 
 ### Frontend (Yash):
-- Integrate frontend with real backend (no more mock responses)  
-- Add Cypress test  
-- Add unit tests for frontend components  
+- #31 Add traffic simulation controls
+- #32 Add live request log panel
+- #33 Add real-time charts for metrics
+- #34 Update dashboard layout for Sprint 2
+- #35 Improve error handling for bulk requests
+- Add Cypress E2E test
+- Add unit tests for frontend components and utilities
 
 ---
 
 ## What Got Done
 
+Everything planned was completed on both frontend and backend.
+
+### Frontend
+- Added traffic simulation controls with 3 modes: Normal Load (10 reqs), Traffic Spike (50 reqs), Abusive Requests (100 reqs) — PR #36
+- Added live request log panel showing requestId, routedTo, status, and latency in a scrollable table — PR #54
+- Added real-time area charts for requests/sec, errors/sec, and rate limited/sec using recharts — PR #55
+- Updated dashboard layout and header for Sprint 2 — PR #56
+- Improved error handling with specific messages for 429 rate limiting, 500 server errors, and network failures — PR #58
+- Added 32 unit tests (Vitest + React Testing Library)
+- Added 5 Cypress E2E tests
+
+### Backend
 Everything planned for the backend was completed.
 
 - Created real backend services (orders and analytics) running on different ports  
@@ -62,8 +78,7 @@ Client → Gateway → Selected Service → Response → Gateway → Client
 - Advanced load balancing (least-loaded) — we implemented round-robin first since it’s simpler and enough for this sprint.  
 - Distributed rate limiting (Redis) — current version is in-memory only. We kept it simple to avoid overcomplicating the system.  
 - Detailed per-service metrics — right now metrics are global. Per-instance metrics can be added later.  
-- Failure injection / traffic simulation — we manually stopped services to test failures, but didn’t build UI controls for it yet.  
-- Visualization improvements — frontend still shows basic stats, not graphs or charts.  
+- Failure injection — we manually stopped services to test failures, but didn’t build automated failure injection yet.
 
 We intentionally kept these for Sprint 3 so Sprint 2 stays focused on getting the **core system working properly**.
 
@@ -194,3 +209,91 @@ go test ./...
     "orderId": 101
   }
 }
+```
+
+---
+
+## Frontend Unit Tests (Vitest + React Testing Library)
+
+We added frontend unit tests to verify utility functions and component rendering behavior without needing to run the full app.
+
+### Files Added
+
+- `src/utils/metrics.js` — extracted testable helper functions
+- `src/utils/metrics.test.js` — 21 unit tests for utility functions
+- `src/pages/Dashboard.test.jsx` — 11 component tests
+
+---
+
+### metrics.test.js (21 tests)
+
+| # | Test | What it verifies |
+|---|---|---|
+| 1 | computeRate returns 0 when previous is null | Handles initial state |
+| 2 | computeRate returns 0 when previous is undefined | Handles missing data |
+| 3 | computeRate computes rate correctly with default interval | Calculates req/sec over 1.5s |
+| 4 | computeRate computes rate with custom interval | Supports variable poll intervals |
+| 5 | computeRate returns 0 when current equals previous | No change = zero rate |
+| 6 | computeRate clamps negative values to 0 | Prevents negative rates |
+| 7 | parseStatus parses a full status response | Maps all fields correctly |
+| 8 | parseStatus returns dashes for missing fields | Graceful fallback for empty data |
+| 9 | parseStatus returns dashes for null input | Handles null response |
+| 10 | parseStatus handles partial data | Mixes real and fallback values |
+| 11 | getHealthMessage returns "UP" when status is ok | Happy path health check |
+| 12 | getHealthMessage returns unexpected payload for other statuses | Non-standard response handling |
+| 13 | getHealthMessage handles missing status field | Graceful fallback |
+| 14 | classifyError classifies 429 as rate limited | Rate limit detection |
+| 15 | classifyError classifies 500 as server error | Server error detection |
+| 16 | classifyError classifies 503 as server error | Includes status code in message |
+| 17 | classifyError classifies network_error as offline | Network failure detection |
+| 18 | classifyError classifies other errors with custom message | Generic error passthrough |
+| 19 | classifyError uses default message when none provided | Fallback error message |
+| 20 | formatMetricsEntry computes all three rates | Full metrics computation |
+| 21 | formatMetricsEntry returns 0 rates when no previous values | Initial state handling |
+
+---
+
+### Dashboard.test.jsx (11 tests)
+
+| # | Test | What it verifies |
+|---|---|---|
+| 1 | renders the dashboard title | "EdgeForge Dashboard" renders |
+| 2 | shows loading state initially for health | Health indicator starts as "Checking..." |
+| 3 | shows "UP" when health check succeeds | Green status after successful /health call |
+| 4 | shows "DOWN" when health check fails | Red status on network error |
+| 5 | renders all 5 stats cards | Uptime, Requests, Errors, Rate Limited, Active Sims |
+| 6 | renders the Send Test Request button | Button is present and clickable |
+| 7 | disables button while sending | Button shows "Sending..." and is disabled |
+| 8 | displays response after successful request | Shows requestId in response panel |
+| 9 | shows rate limit error for 429 response | Yellow banner with rate limit message |
+| 10 | shows network error when fetch fails | Shows "Cannot reach backend" message |
+| 11 | renders chart cards | All 3 chart sections render |
+
+### How to run frontend unit tests
+
+```bash
+cd frontend && npm test
+```
+
+---
+
+## Cypress E2E Test
+
+### File Added
+
+- `cypress/e2e/dashboard.cy.js`
+
+| # | Test | What it verifies |
+|---|---|---|
+| 1 | loads the dashboard page | Visits / and verifies title is visible |
+| 2 | displays the health indicator | Backend Health card is visible |
+| 3 | displays all five stats cards | All stats cards render on the page |
+| 4 | has a send test request button that can be clicked | Clicks button and verifies response area |
+| 5 | displays chart sections | All 3 chart sections are visible |
+
+### How to run Cypress tests
+
+```bash
+cd frontend && npx cypress run       # headless
+cd frontend && npx cypress open      # interactive
+```
