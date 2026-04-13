@@ -155,6 +155,7 @@ export default function Dashboard() {
   const [lastStatus, setLastStatus] = useState(null);
   const [requestLog, setRequestLog] = useState([]);
   const [logFilters, setLogFilters] = useState({ service: "all", status: "all", search: "" });
+  const [selectedRequest, setSelectedRequest] = useState(null);
 
   async function sendTestRequest() {
     setSending(true);
@@ -194,6 +195,7 @@ export default function Dashboard() {
             status: res.status,
             latency,
             time: new Date().toLocaleTimeString(),
+            response: data,
           },
           ...prev,
         ].slice(0, 100)
@@ -622,7 +624,8 @@ export default function Dashboard() {
                     visibleLog.map((entry, i) => (
                       <tr
                         key={i}
-                        style={{ borderBottom: "1px solid #f3f4f6" }}
+                        onClick={() => setSelectedRequest(entry)}
+                        style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer" }}
                       >
                         <td style={{ padding: "6px 10px", color: "#6b7280" }}>{entry.time}</td>
                         <td style={{ padding: "6px 10px" }}>
@@ -790,6 +793,94 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {selectedRequest && (
+        <div
+          role="dialog"
+          aria-label="Request details"
+          onClick={() => setSelectedRequest(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white",
+              borderRadius: 12,
+              padding: 24,
+              maxWidth: 600,
+              width: "100%",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 18 }}>Request Details</h3>
+              <button
+                onClick={() => setSelectedRequest(null)}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  background: "white",
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ fontSize: 13, marginBottom: 12 }}>
+              <div><strong>Time:</strong> {selectedRequest.time}</div>
+              <div><strong>Request ID:</strong> <code>{selectedRequest.id}</code></div>
+              <div><strong>Routed To:</strong> {selectedRequest.routedTo}</div>
+              <div><strong>Status:</strong> {selectedRequest.status}</div>
+              <div><strong>Latency:</strong> {selectedRequest.latency}ms</div>
+            </div>
+            <button
+              onClick={() => navigator.clipboard?.writeText(selectedRequest.id)}
+              style={{
+                border: "1px solid #111827",
+                background: "#111827",
+                color: "white",
+                padding: "6px 12px",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: 12,
+                marginBottom: 12,
+              }}
+            >
+              Copy Request ID
+            </button>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Response</div>
+            <pre
+              style={{
+                margin: 0,
+                padding: 12,
+                borderRadius: 8,
+                background: "#111827",
+                color: "#e5e7eb",
+                fontSize: 12,
+                overflowX: "auto",
+                maxHeight: 300,
+              }}
+            >
+              {selectedRequest.response
+                ? JSON.stringify(selectedRequest.response, null, 2)
+                : "No response data captured."}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
