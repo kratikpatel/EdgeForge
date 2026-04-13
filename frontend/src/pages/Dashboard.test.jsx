@@ -162,4 +162,15 @@ describe("Dashboard", () => {
       screen.getByText("Send requests to see per-service breakdown.")
     ).toBeInTheDocument();
   });
+
+  it("renders request log filter controls", () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    expect(screen.getByLabelText("Filter by service")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter by status")).toBeInTheDocument();
+    expect(screen.getByLabelText("Search request id")).toBeInTheDocument();
+    expect(screen.getByText(/Showing 0 of 0/)).toBeInTheDocument();
+  });
 });

@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { API_BASE } from "../config";
-import { aggregateByService } from "../utils/metrics";
+import { aggregateByService, filterRequestLog } from "../utils/metrics";
 
 function Card({ title, children }) {
   return (
@@ -154,6 +154,7 @@ export default function Dashboard() {
   const [lastResponse, setLastResponse] = useState(null);
   const [lastStatus, setLastStatus] = useState(null);
   const [requestLog, setRequestLog] = useState([]);
+  const [logFilters, setLogFilters] = useState({ service: "all", status: "all", search: "" });
 
   async function sendTestRequest() {
     setSending(true);
@@ -488,6 +489,89 @@ export default function Dashboard() {
 
           {/* Live Request Log */}
           <Card title={`Live Request Log (${requestLog.length})`}>
+            {(() => {
+              const visibleLog = filterRequestLog(requestLog, logFilters);
+              const uniqueServices = Array.from(
+                new Set(requestLog.map((e) => e.routedTo).filter((s) => s && s !== "—"))
+              );
+              return (
+                <>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      marginBottom: 10,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
+                    <label style={{ fontSize: 12, color: "#6b7280" }}>
+                      Filter by service:{" "}
+                      <select
+                        aria-label="Filter by service"
+                        value={logFilters.service}
+                        onChange={(e) =>
+                          setLogFilters({ ...logFilters, service: e.target.value })
+                        }
+                        style={{
+                          marginLeft: 4,
+                          padding: "4px 8px",
+                          borderRadius: 6,
+                          border: "1px solid #e5e7eb",
+                          fontSize: 12,
+                        }}
+                      >
+                        <option value="all">All</option>
+                        {uniqueServices.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: 12, color: "#6b7280" }}>
+                      Status:{" "}
+                      <select
+                        aria-label="Filter by status"
+                        value={logFilters.status}
+                        onChange={(e) =>
+                          setLogFilters({ ...logFilters, status: e.target.value })
+                        }
+                        style={{
+                          marginLeft: 4,
+                          padding: "4px 8px",
+                          borderRadius: 6,
+                          border: "1px solid #e5e7eb",
+                          fontSize: 12,
+                        }}
+                      >
+                        <option value="all">All</option>
+                        <option value="success">Success (2xx)</option>
+                        <option value="rateLimited">Rate Limited (429)</option>
+                        <option value="error">Error</option>
+                      </select>
+                    </label>
+                    <input
+                      type="text"
+                      aria-label="Search request id"
+                      placeholder="Search request id..."
+                      value={logFilters.search}
+                      onChange={(e) =>
+                        setLogFilters({ ...logFilters, search: e.target.value })
+                      }
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        fontSize: 12,
+                        flex: "1 1 160px",
+                        minWidth: 120,
+                      }}
+                    />
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>
+                      Showing {visibleLog.length} of {requestLog.length}
+                    </span>
+                  </div>
             <div
               style={{
                 maxHeight: 300,
@@ -519,7 +603,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {requestLog.length === 0 ? (
+                  {visibleLog.length === 0 ? (
                     <tr>
                       <td
                         colSpan={5}
@@ -529,11 +613,13 @@ export default function Dashboard() {
                           color: "#9ca3af",
                         }}
                       >
-                        No requests yet. Send a test request to see logs here.
+                        {requestLog.length === 0
+                          ? "No requests yet. Send a test request to see logs here."
+                          : "No requests match the current filters."}
                       </td>
                     </tr>
                   ) : (
-                    requestLog.map((entry, i) => (
+                    visibleLog.map((entry, i) => (
                       <tr
                         key={i}
                         style={{ borderBottom: "1px solid #f3f4f6" }}
@@ -599,6 +685,9 @@ export default function Dashboard() {
                 Clear Log
               </button>
             )}
+                </>
+              );
+            })()}
           </Card>
 
           {/* Per-Service Metrics */}
