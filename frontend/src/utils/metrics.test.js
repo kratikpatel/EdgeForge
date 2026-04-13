@@ -7,6 +7,7 @@ import {
   formatMetricsEntry,
   aggregateByService,
   filterRequestLog,
+  toCsv,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -242,5 +243,40 @@ describe("filterRequestLog", () => {
   it("returns empty array for non-array input", () => {
     expect(filterRequestLog(null)).toEqual([]);
     expect(filterRequestLog(undefined)).toEqual([]);
+  });
+});
+
+describe("toCsv", () => {
+  it("returns header only for empty log", () => {
+    expect(toCsv([])).toBe("time,requestId,routedTo,status,latencyMs\n");
+    expect(toCsv(null)).toBe("time,requestId,routedTo,status,latencyMs\n");
+  });
+
+  it("formats a single row correctly", () => {
+    const csv = toCsv([
+      { time: "12:00:00", id: "abc", routedTo: "orders-1", status: 200, latency: 45 },
+    ]);
+    expect(csv).toBe(
+      "time,requestId,routedTo,status,latencyMs\n12:00:00,abc,orders-1,200,45\n"
+    );
+  });
+
+  it("formats multiple rows", () => {
+    const csv = toCsv([
+      { time: "12:00:00", id: "abc", routedTo: "orders-1", status: 200, latency: 45 },
+      { time: "12:00:01", id: "def", routedTo: "orders-2", status: 429, latency: 12 },
+    ]);
+    const lines = csv.trim().split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toBe("12:00:00,abc,orders-1,200,45");
+    expect(lines[2]).toBe("12:00:01,def,orders-2,429,12");
+  });
+
+  it("escapes commas and quotes in fields", () => {
+    const csv = toCsv([
+      { time: "12:00:00", id: 'abc"def', routedTo: "orders,svc", status: 200, latency: 45 },
+    ]);
+    expect(csv).toContain('"abc""def"');
+    expect(csv).toContain('"orders,svc"');
   });
 });

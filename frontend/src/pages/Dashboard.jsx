@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { API_BASE } from "../config";
-import { aggregateByService, filterRequestLog } from "../utils/metrics";
+import { aggregateByService, filterRequestLog, toCsv } from "../utils/metrics";
 
 function Card({ title, children }) {
   return (
@@ -671,23 +671,49 @@ export default function Dashboard() {
                 </tbody>
               </table>
             </div>
-            {requestLog.length > 0 && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              {requestLog.length > 0 && (
+                <button
+                  onClick={() => setRequestLog([])}
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    background: "white",
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    color: "#6b7280",
+                  }}
+                >
+                  Clear Log
+                </button>
+              )}
               <button
-                onClick={() => setRequestLog([])}
+                onClick={() => {
+                  const csv = toCsv(requestLog);
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `edgeforge-requests-${Date.now()}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                disabled={requestLog.length === 0}
                 style={{
-                  marginTop: 10,
                   border: "1px solid #e5e7eb",
-                  background: "white",
+                  background: requestLog.length === 0 ? "#f3f4f6" : "white",
                   padding: "6px 12px",
                   borderRadius: 8,
-                  cursor: "pointer",
+                  cursor: requestLog.length === 0 ? "not-allowed" : "pointer",
                   fontSize: 12,
                   color: "#6b7280",
+                  opacity: requestLog.length === 0 ? 0.6 : 1,
                 }}
               >
-                Clear Log
+                Export CSV
               </button>
-            )}
+            </div>
                 </>
               );
             })()}

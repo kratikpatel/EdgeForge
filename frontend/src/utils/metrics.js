@@ -114,6 +114,31 @@ export function filterRequestLog(log, filters = {}) {
   });
 }
 
+export function toCsv(requestLog) {
+  const header = "time,requestId,routedTo,status,latencyMs";
+  if (!Array.isArray(requestLog) || requestLog.length === 0) return header + "\n";
+
+  const escape = (val) => {
+    const s = val === null || val === undefined ? "" : String(val);
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+
+  const rows = requestLog.map((entry) =>
+    [
+      escape(entry?.time),
+      escape(entry?.id),
+      escape(entry?.routedTo),
+      escape(entry?.status),
+      escape(entry?.latency),
+    ].join(",")
+  );
+
+  return [header, ...rows].join("\n") + "\n";
+}
+
 export function formatMetricsEntry(reqs, errs, rl, prevReqs, prevErrs, prevRl) {
   return {
     time: new Date().toLocaleTimeString(),
