@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   computeRate,
   parseStatus,
@@ -8,6 +8,8 @@ import {
   aggregateByService,
   filterRequestLog,
   toCsv,
+  loadSettings,
+  saveSettings,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -278,5 +280,34 @@ describe("toCsv", () => {
     ]);
     expect(csv).toContain('"abc""def"');
     expect(csv).toContain('"orders,svc"');
+  });
+});
+
+describe("loadSettings / saveSettings", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns defaults when localStorage is empty", () => {
+    const s = loadSettings();
+    expect(s.pollInterval).toBe(1500);
+    expect(s.maxLogSize).toBe(100);
+    expect(s.chartWindow).toBe(30);
+  });
+
+  it("round-trips saved settings", () => {
+    saveSettings({ pollInterval: 3000, maxLogSize: 200, chartWindow: 60 });
+    const s = loadSettings();
+    expect(s.pollInterval).toBe(3000);
+    expect(s.maxLogSize).toBe(200);
+    expect(s.chartWindow).toBe(60);
+  });
+
+  it("falls back to defaults when localStorage has invalid JSON", () => {
+    localStorage.setItem("edgeforge:settings", "{not valid json");
+    const s = loadSettings();
+    expect(s.pollInterval).toBe(1500);
+    expect(s.maxLogSize).toBe(100);
+    expect(s.chartWindow).toBe(30);
   });
 });

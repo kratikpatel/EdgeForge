@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { API_BASE } from "../config";
-import { aggregateByService, filterRequestLog, toCsv } from "../utils/metrics";
+import { aggregateByService, filterRequestLog, toCsv, loadSettings, saveSettings } from "../utils/metrics";
 
 function Card({ title, children }) {
   return (
@@ -38,6 +38,15 @@ function Card({ title, children }) {
 }
 
 export default function Dashboard() {
+  const [settings, setSettings] = useState(() => loadSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  function updateSetting(key, value) {
+    const next = { ...settings, [key]: value };
+    setSettings(next);
+    saveSettings(next);
+  }
+
   const [health, setHealth] = useState({
     state: "loading",
     message: "Checking...",
@@ -107,13 +116,14 @@ export default function Dashboard() {
     }
 
     fetchStatus();
-    intervalId = setInterval(fetchStatus, 1500);
+    intervalId = setInterval(fetchStatus, settings?.pollInterval || 1500);
 
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.pollInterval]);
   const [metricsHistory, setMetricsHistory] = useState([]);
   const prevRequests = useRef(null);
   const prevErrors = useRef(null);
@@ -145,9 +155,9 @@ export default function Dashboard() {
     prevRateLimited.current = rl;
 
     setMetricsHistory((prev) =>
-      [...prev, { time: now, reqsPerSec, errsPerSec, rlPerSec }].slice(-30)
+      [...prev, { time: now, reqsPerSec, errsPerSec, rlPerSec }].slice(-(settings?.chartWindow || 30))
     );
-  }, [status]);
+  }, [status, settings?.chartWindow]);
 
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -198,7 +208,7 @@ export default function Dashboard() {
             response: data,
           },
           ...prev,
-        ].slice(0, 100)
+        ].slice(0, settings?.maxLogSize || 100)
       );
     } catch (e) {
       const latency = Date.now() - start;
@@ -218,7 +228,7 @@ export default function Dashboard() {
             time: new Date().toLocaleTimeString(),
           },
           ...prev,
-        ].slice(0, 100)
+        ].slice(0, settings?.maxLogSize || 100)
       );
     } finally {
       setSending(false);
@@ -287,6 +297,68 @@ export default function Dashboard() {
         </header>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
+          {/* Settings Panel */}
+          <Card title="Settings">
+            <button
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              style={{
+                border: "1px solid #e5e7eb",
+                background: "white",
+                padding: "6px 12px",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: 12,
+                color: "#374151",
+                marginBottom: settingsOpen ? 12 : 0,
+              }}
+            >
+              {settingsOpen ? "Hide Settings" : "Show Settings"}
+            </button>
+            {settingsOpen && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 13 }}>
+                <label>
+                  Poll interval:{" "}
+                  <select
+                    aria-label="Poll interval"
+                    value={settings.pollInterval}
+                    onChange={(e) => updateSetting("pollInterval", Number(e.target.value))}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}
+                  >
+                    <option value={1000}>1s</option>
+                    <option value={1500}>1.5s</option>
+                    <option value={3000}>3s</option>
+                  </select>
+                </label>
+                <label>
+                  Max log entries:{" "}
+                  <select
+                    aria-label="Max log entries"
+                    value={settings.maxLogSize}
+                    onChange={(e) => updateSetting("maxLogSize", Number(e.target.value))}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}
+                  >
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </label>
+                <label>
+                  Chart history:{" "}
+                  <select
+                    aria-label="Chart history window"
+                    value={settings.chartWindow}
+                    onChange={(e) => updateSetting("chartWindow", Number(e.target.value))}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}
+                  >
+                    <option value={15}>15</option>
+                    <option value={30}>30</option>
+                    <option value={60}>60</option>
+                  </select>
+                </label>
+              </div>
+            )}
+          </Card>
+
           {/* Health Indicator */}
           <Card title="Backend Health">
             <div
