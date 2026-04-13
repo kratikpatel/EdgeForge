@@ -5,6 +5,7 @@ import {
   getHealthMessage,
   classifyError,
   formatMetricsEntry,
+  aggregateByService,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -139,5 +140,57 @@ describe("formatMetricsEntry", () => {
     expect(entry.reqsPerSec).toBe(0);
     expect(entry.errsPerSec).toBe(0);
     expect(entry.rlPerSec).toBe(0);
+  });
+});
+
+describe("aggregateByService", () => {
+  it("returns empty array for empty log", () => {
+    expect(aggregateByService([])).toEqual([]);
+    expect(aggregateByService(null)).toEqual([]);
+    expect(aggregateByService(undefined)).toEqual([]);
+  });
+
+  it("aggregates a single service correctly", () => {
+    const log = [
+      { routedTo: "orders-service-1", status: 200, latency: 100 },
+      { routedTo: "orders-service-1", status: 200, latency: 200 },
+    ];
+    const result = aggregateByService(log);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      service: "orders-service-1",
+      total: 2,
+      success: 2,
+      rateLimited: 0,
+      errors: 0,
+      avgLatency: 150,
+    });
+  });
+
+  it("aggregates multiple services and counts statuses", () => {
+    const log = [
+      { routedTo: "orders-service-1", status: 200, latency: 100 },
+      { routedTo: "analytics-service-1", status: 429, latency: 50 },
+      { routedTo: "analytics-service-1", status: 500, latency: 80 },
+      { routedTo: "orders-service-1", status: 200, latency: 200 },
+    ];
+    const result = aggregateByService(log);
+    expect(result).toHaveLength(2);
+    const orders = result.find((r) => r.service === "orders-service-1");
+    const analytics = result.find((r) => r.service === "analytics-service-1");
+    expect(orders).toMatchObject({ total: 2, success: 2, rateLimited: 0, errors: 0, avgLatency: 150 });
+    expect(analytics).toMatchObject({ total: 2, success: 0, rateLimited: 1, errors: 1, avgLatency: 65 });
+  });
+
+  it("handles missing routedTo and latency gracefully", () => {
+    const log = [
+      { status: 200 },
+      { routedTo: null, status: 500, latency: "bad" },
+    ];
+    const result = aggregateByService(log);
+    expect(result).toHaveLength(1);
+    expect(result[0].service).toBe("unknown");
+    expect(result[0].total).toBe(2);
+    expect(result[0].avgLatency).toBe(0);
   });
 });

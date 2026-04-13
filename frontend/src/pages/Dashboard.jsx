@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { API_BASE } from "../config";
+import { aggregateByService } from "../utils/metrics";
 
 function Card({ title, children }) {
   return (
@@ -597,6 +598,42 @@ export default function Dashboard() {
               >
                 Clear Log
               </button>
+            )}
+          </Card>
+
+          {/* Per-Service Metrics */}
+          <Card title="Per-Service Metrics">
+            {requestLog.length === 0 ? (
+              <div style={{ color: "#6b7280", fontSize: 13, padding: "8px 0" }}>
+                Send requests to see per-service breakdown.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", color: "#6b7280" }}>
+                      <th style={{ padding: "6px 8px" }}>Service</th>
+                      <th style={{ padding: "6px 8px" }}>Total</th>
+                      <th style={{ padding: "6px 8px" }}>Success</th>
+                      <th style={{ padding: "6px 8px" }}>Rate Limited</th>
+                      <th style={{ padding: "6px 8px" }}>Errors</th>
+                      <th style={{ padding: "6px 8px" }}>Avg Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aggregateByService(requestLog).map((row) => (
+                      <tr key={row.service} style={{ borderTop: "1px solid #f3f4f6" }}>
+                        <td style={{ padding: "8px", fontWeight: 600 }}>{row.service}</td>
+                        <td style={{ padding: "8px" }}>{row.total}</td>
+                        <td style={{ padding: "8px", color: "#16a34a" }}>{row.success}</td>
+                        <td style={{ padding: "8px", color: "#d97706" }}>{row.rateLimited}</td>
+                        <td style={{ padding: "8px", color: "#b91c1c" }}>{row.errors}</td>
+                        <td style={{ padding: "8px" }}>{row.avgLatency}ms</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Card>
 

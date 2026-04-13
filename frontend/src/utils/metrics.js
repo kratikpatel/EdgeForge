@@ -51,6 +51,47 @@ export function classifyError(status, message) {
   };
 }
 
+export function aggregateByService(requestLog) {
+  if (!Array.isArray(requestLog) || requestLog.length === 0) return [];
+
+  const byService = {};
+  for (const entry of requestLog) {
+    const service = entry?.routedTo || "unknown";
+    if (!byService[service]) {
+      byService[service] = {
+        service,
+        total: 0,
+        success: 0,
+        rateLimited: 0,
+        errors: 0,
+        latencySum: 0,
+        latencyCount: 0,
+      };
+    }
+    const bucket = byService[service];
+    bucket.total += 1;
+    const status = Number(entry?.status);
+    if (status === 429) bucket.rateLimited += 1;
+    else if (status >= 200 && status < 300) bucket.success += 1;
+    else bucket.errors += 1;
+
+    const latency = Number(entry?.latency);
+    if (Number.isFinite(latency)) {
+      bucket.latencySum += latency;
+      bucket.latencyCount += 1;
+    }
+  }
+
+  return Object.values(byService).map((b) => ({
+    service: b.service,
+    total: b.total,
+    success: b.success,
+    rateLimited: b.rateLimited,
+    errors: b.errors,
+    avgLatency: b.latencyCount > 0 ? Math.round(b.latencySum / b.latencyCount) : 0,
+  }));
+}
+
 export function formatMetricsEntry(reqs, errs, rl, prevReqs, prevErrs, prevRl) {
   return {
     time: new Date().toLocaleTimeString(),
