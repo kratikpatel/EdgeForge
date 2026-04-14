@@ -139,6 +139,34 @@ export function toCsv(requestLog) {
   return [header, ...rows].join("\n") + "\n";
 }
 
+const SETTINGS_KEY = "edgeforge:settings";
+const DEFAULT_SETTINGS = {
+  pollInterval: 1500,
+  maxLogSize: 100,
+  chartWindow: 30,
+};
+
+export function loadSettings() {
+  try {
+    const raw = typeof localStorage !== "undefined" && localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_SETTINGS };
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_SETTINGS, ...parsed };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+export function saveSettings(settings) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function formatMetricsEntry(reqs, errs, rl, prevReqs, prevErrs, prevRl) {
   return {
     time: new Date().toLocaleTimeString(),

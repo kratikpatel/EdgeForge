@@ -191,4 +191,13 @@ describe("Dashboard", () => {
     expect(btn).toBeInTheDocument();
     expect(btn).toBeDisabled();
   });
+
+  it("renders the Settings panel", () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    expect(screen.getAllByText("Settings").length).toBeGreaterThan(0);
+    expect(screen.getByText("Show Settings")).toBeInTheDocument();
+  });
 });
