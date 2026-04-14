@@ -151,4 +151,15 @@ describe("Dashboard", () => {
     expect(screen.getByText("Errors / sec")).toBeInTheDocument();
     expect(screen.getByText("Rate Limited / sec")).toBeInTheDocument();
   });
+
+  it("renders per-service metrics panel with empty state", () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    expect(screen.getByText("Per-Service Metrics")).toBeInTheDocument();
+    expect(
+      screen.getByText("Send requests to see per-service breakdown.")
+    ).toBeInTheDocument();
+  });
 });
