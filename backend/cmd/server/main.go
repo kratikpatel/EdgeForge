@@ -100,7 +100,7 @@ func writeRateLimitResponse(w http.ResponseWriter) {
 func main() {
 	m := metrics.New()
 	serviceRegistry := registry.New()
-	rr := loadbalancer.NewRoundRobin()
+	ll := loadbalancer.NewLeastLoaded()
 	rl := ratelimiter.New(5, 10*time.Second)
 	httpClient := &http.Client{
 		Timeout: 2 * time.Second,
@@ -173,7 +173,7 @@ func main() {
 			return
 		}
 
-		selected := rr.Select(serviceName, healthyInstances)
+		selected := ll.Select(healthyInstances)
 		forwardURL := selected.URL + "/handle"
 
 		if err := serviceRegistry.IncrementActiveRequests(serviceName, selected.Name); err != nil {
