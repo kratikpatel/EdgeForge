@@ -181,4 +181,14 @@ describe("Dashboard", () => {
     render(<Dashboard />);
     expect(screen.queryByRole("dialog", { name: "Request details" })).not.toBeInTheDocument();
   });
+
+  it("renders Export CSV button disabled when log is empty", () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    const btn = screen.getByText("Export CSV");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toBeDisabled();
+  });
 });
