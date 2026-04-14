@@ -92,6 +92,28 @@ export function aggregateByService(requestLog) {
   }));
 }
 
+export function filterRequestLog(log, filters = {}) {
+  if (!Array.isArray(log)) return [];
+  const { service = "all", status = "all", search = "" } = filters;
+  const searchLower = (search || "").trim().toLowerCase();
+
+  return log.filter((entry) => {
+    if (service !== "all" && entry?.routedTo !== service) return false;
+
+    const code = Number(entry?.status);
+    if (status === "success" && !(code >= 200 && code < 300)) return false;
+    if (status === "rateLimited" && code !== 429) return false;
+    if (status === "error" && !(code >= 400 && code !== 429)) return false;
+
+    if (searchLower) {
+      const id = String(entry?.id || "").toLowerCase();
+      if (!id.includes(searchLower)) return false;
+    }
+
+    return true;
+  });
+}
+
 export function formatMetricsEntry(reqs, errs, rl, prevReqs, prevErrs, prevRl) {
   return {
     time: new Date().toLocaleTimeString(),

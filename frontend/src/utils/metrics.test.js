@@ -6,6 +6,7 @@ import {
   classifyError,
   formatMetricsEntry,
   aggregateByService,
+  filterRequestLog,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -192,5 +193,54 @@ describe("aggregateByService", () => {
     expect(result[0].service).toBe("unknown");
     expect(result[0].total).toBe(2);
     expect(result[0].avgLatency).toBe(0);
+  });
+});
+
+describe("filterRequestLog", () => {
+  const log = [
+    { id: "abc123", routedTo: "orders-service-1", status: 200 },
+    { id: "def456", routedTo: "orders-service-1", status: 429 },
+    { id: "ghi789", routedTo: "analytics-service-1", status: 500 },
+    { id: "jkl012", routedTo: "analytics-service-1", status: 200 },
+  ];
+
+  it("returns full log when no filters applied", () => {
+    expect(filterRequestLog(log, {})).toHaveLength(4);
+    expect(filterRequestLog(log)).toHaveLength(4);
+  });
+
+  it("filters by service", () => {
+    const result = filterRequestLog(log, { service: "orders-service-1" });
+    expect(result).toHaveLength(2);
+    expect(result.every((r) => r.routedTo === "orders-service-1")).toBe(true);
+  });
+
+  it("filters by status success", () => {
+    const result = filterRequestLog(log, { status: "success" });
+    expect(result).toHaveLength(2);
+    expect(result.every((r) => r.status === 200)).toBe(true);
+  });
+
+  it("filters by status rateLimited", () => {
+    const result = filterRequestLog(log, { status: "rateLimited" });
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe(429);
+  });
+
+  it("filters by status error", () => {
+    const result = filterRequestLog(log, { status: "error" });
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe(500);
+  });
+
+  it("filters by search substring on id", () => {
+    expect(filterRequestLog(log, { search: "abc" })).toHaveLength(1);
+    expect(filterRequestLog(log, { search: "ABC" })).toHaveLength(1);
+    expect(filterRequestLog(log, { search: "xyz" })).toHaveLength(0);
+  });
+
+  it("returns empty array for non-array input", () => {
+    expect(filterRequestLog(null)).toEqual([]);
+    expect(filterRequestLog(undefined)).toEqual([]);
   });
 });
