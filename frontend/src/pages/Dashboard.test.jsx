@@ -173,4 +173,12 @@ describe("Dashboard", () => {
     expect(screen.getByLabelText("Search request id")).toBeInTheDocument();
     expect(screen.getByText(/Showing 0 of 0/)).toBeInTheDocument();
   });
+
+  it("does not render the request details modal by default", () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    expect(screen.queryByRole("dialog", { name: "Request details" })).not.toBeInTheDocument();
+  });
 });
