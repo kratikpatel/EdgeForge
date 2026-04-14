@@ -80,3 +80,101 @@ func TestSetInstanceHealthUpdatesHealthStatus(t *testing.T) {
 		t.Fatal("expected analytics-service-1 to exist")
 	}
 }
+
+func TestIncrementActiveRequests(t *testing.T) {
+	r := New()
+
+	err := r.IncrementActiveRequests("orders", "orders-service-1")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	instances, err := r.GetInstances("orders")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	var found bool
+	for _, instance := range instances {
+		if instance.Name == "orders-service-1" {
+			found = true
+			if instance.ActiveRequests != 1 {
+				t.Fatalf("expected active requests to be 1, got %d", instance.ActiveRequests)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("expected to find orders-service-1")
+	}
+}
+
+func TestDecrementActiveRequests(t *testing.T) {
+	r := New()
+
+	if err := r.IncrementActiveRequests("orders", "orders-service-1"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if err := r.DecrementActiveRequests("orders", "orders-service-1"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	instances, err := r.GetInstances("orders")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	var found bool
+	for _, instance := range instances {
+		if instance.Name == "orders-service-1" {
+			found = true
+			if instance.ActiveRequests != 0 {
+				t.Fatalf("expected active requests to be 0, got %d", instance.ActiveRequests)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("expected to find orders-service-1")
+	}
+}
+
+func TestDecrementActiveRequestsDoesNotGoNegative(t *testing.T) {
+	r := New()
+
+	if err := r.DecrementActiveRequests("orders", "orders-service-1"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	instances, err := r.GetInstances("orders")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	for _, instance := range instances {
+		if instance.Name == "orders-service-1" {
+			if instance.ActiveRequests != 0 {
+				t.Fatalf("expected active requests to stay at 0, got %d", instance.ActiveRequests)
+			}
+		}
+	}
+}
+
+func TestIncrementActiveRequestsUnknownService(t *testing.T) {
+	r := New()
+
+	err := r.IncrementActiveRequests("payments", "payments-service-1")
+	if err == nil {
+		t.Fatal("expected error for unknown service, got nil")
+	}
+}
+
+func TestIncrementActiveRequestsUnknownInstance(t *testing.T) {
+	r := New()
+
+	err := r.IncrementActiveRequests("orders", "orders-service-99")
+	if err == nil {
+		t.Fatal("expected error for unknown instance, got nil")
+	}
+}
