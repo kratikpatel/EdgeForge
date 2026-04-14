@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"edgeforge/backend/internal/loadbalancer"
+	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/registry"
 )
 
@@ -20,6 +21,7 @@ func ForwardWithRetry(
 	client *http.Client,
 	serviceRegistry *registry.ServiceRegistry,
 	balancer *loadbalancer.LeastLoaded,
+	metricsCollector *metrics.Metrics,
 	serviceName string,
 	requestBody any,
 	maxAttempts int,
@@ -46,6 +48,9 @@ func ForwardWithRetry(
 		selected := balancer.Select(available)
 		tried[selected.Name] = true
 
+		metricsCollector.IncServiceRequests(serviceName)
+		metricsCollector.IncInstanceRequests(serviceName, selected.Name)
+
 		if err := serviceRegistry.IncrementActiveRequests(serviceName, selected.Name); err != nil {
 			return nil, err
 		}
@@ -62,6 +67,8 @@ func ForwardWithRetry(
 				BackendResponse:  result,
 			}, nil
 		}
+
+		metricsCollector.IncInstanceFailures(serviceName, selected.Name)
 	}
 
 	return nil, fmt.Errorf("all retry attempts failed for service %q", serviceName)

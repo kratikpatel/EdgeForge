@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"edgeforge/backend/internal/loadbalancer"
+	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/registry"
 )
 
 func TestForwardWithRetrySucceedsOnFirstHealthyInstance(t *testing.T) {
 	reg := registry.New()
 	lb := loadbalancer.NewLeastLoaded()
+	metricCollector := metrics.New()
 	client := &http.Client{Timeout: 2 * time.Second}
 
 	successServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +29,7 @@ func TestForwardWithRetrySucceedsOnFirstHealthyInstance(t *testing.T) {
 
 	setInstanceURL(t, reg, "orders", "orders-service-1", successServer.URL)
 
-	result, err := ForwardWithRetry(client, reg, lb, "orders", map[string]any{
+	result, err := ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
 	}, 2)
 	if err != nil {
@@ -46,6 +48,7 @@ func TestForwardWithRetrySucceedsOnFirstHealthyInstance(t *testing.T) {
 func TestForwardWithRetryRetriesAfterFailure(t *testing.T) {
 	reg := registry.New()
 	lb := loadbalancer.NewLeastLoaded()
+	metricCollector := metrics.New()
 	client := &http.Client{Timeout: 2 * time.Second}
 
 	failedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +66,7 @@ func TestForwardWithRetryRetriesAfterFailure(t *testing.T) {
 	setInstanceURL(t, reg, "orders", "orders-service-1", failedServer.URL)
 	setInstanceURL(t, reg, "orders", "orders-service-2", successServer.URL)
 
-	result, err := ForwardWithRetry(client, reg, lb, "orders", map[string]any{
+	result, err := ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
 	}, 2)
 	if err != nil {
@@ -78,6 +81,7 @@ func TestForwardWithRetryRetriesAfterFailure(t *testing.T) {
 func TestForwardWithRetryFailsWhenAllAttemptsFail(t *testing.T) {
 	reg := registry.New()
 	lb := loadbalancer.NewLeastLoaded()
+	metricCollector := metrics.New()
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 
 	badServer1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +97,7 @@ func TestForwardWithRetryFailsWhenAllAttemptsFail(t *testing.T) {
 	setInstanceURL(t, reg, "orders", "orders-service-1", badServer1.URL)
 	setInstanceURL(t, reg, "orders", "orders-service-2", badServer2.URL)
 
-	_, err := ForwardWithRetry(client, reg, lb, "orders", map[string]any{
+	_, err := ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
 	}, 2)
 	if err == nil {
@@ -104,6 +108,7 @@ func TestForwardWithRetryFailsWhenAllAttemptsFail(t *testing.T) {
 func TestForwardWithRetryDecrementsActiveRequestsAfterFailure(t *testing.T) {
 	reg := registry.New()
 	lb := loadbalancer.NewLeastLoaded()
+	metricCollector := metrics.New()
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 
 	badServer1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +124,7 @@ func TestForwardWithRetryDecrementsActiveRequestsAfterFailure(t *testing.T) {
 	setInstanceURL(t, reg, "orders", "orders-service-1", badServer1.URL)
 	setInstanceURL(t, reg, "orders", "orders-service-2", badServer2.URL)
 
-	_, _ = ForwardWithRetry(client, reg, lb, "orders", map[string]any{
+	_, _ = ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
 	}, 2)
 
@@ -153,22 +158,11 @@ func setInstanceURL(t *testing.T, reg *registry.ServiceRegistry, serviceName, in
 func replaceRegistryService(t *testing.T, reg *registry.ServiceRegistry, serviceName string, updated []registry.ServiceInstance) {
 	t.Helper()
 
-	// rebuild registry by applying updated slice through health-preserving overwrite logic
 	current := reg.GetAll()
-
 	current[serviceName] = updated
-
-	newReg := registry.New()
-	for svc, instances := range current {
-		for _, instance := range instances {
-			_ = newReg.SetInstanceHealth(svc, instance.Name, instance.Healthy)
-		}
-	}
-
 	registryMapOverwrite(reg, current)
 }
 
 func registryMapOverwrite(reg *registry.ServiceRegistry, updated map[string][]registry.ServiceInstance) {
-	// this helper depends on adding SetServices below in registry.go
 	reg.SetServices(updated)
 }
