@@ -161,3 +161,17 @@ func (r *ServiceRegistry) DecrementActiveRequests(serviceName, instanceName stri
 
 	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
 }
+
+func (r *ServiceRegistry) SetServices(services map[string][]ServiceInstance) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	copied := make(map[string][]ServiceInstance, len(services))
+	for serviceName, instances := range services {
+		instanceCopy := make([]ServiceInstance, len(instances))
+		copy(instanceCopy, instances)
+		copied[serviceName] = instanceCopy
+	}
+
+	r.services = copied
+}

@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -12,6 +10,7 @@ import (
 	"edgeforge/backend/internal/loadbalancer"
 	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/middleware"
+	"edgeforge/backend/internal/proxy"
 	"edgeforge/backend/internal/ratelimiter"
 	"edgeforge/backend/internal/registry"
 )
@@ -163,8 +162,7 @@ func main() {
 			return
 		}
 
-		healthyInstances, err := serviceRegistry.GetHealthyInstances(serviceName)
-		if err != nil {
+		if _, err := serviceRegistry.GetHealthyInstances(serviceName); err != nil {
 			m.IncErrors()
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error":   "no_healthy_instances",
@@ -173,75 +171,11 @@ func main() {
 			return
 		}
 
-		selected := ll.Select(healthyInstances)
-		forwardURL := selected.URL + "/handle"
-
-		if err := serviceRegistry.IncrementActiveRequests(serviceName, selected.Name); err != nil {
-			m.IncErrors()
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error": "failed_to_track_active_request",
-			})
-			return
-		}
-		defer func() {
-			if err := serviceRegistry.DecrementActiveRequests(serviceName, selected.Name); err != nil {
-				log.Printf("failed to decrement active requests for %s/%s: %v", serviceName, selected.Name, err)
-			}
-		}()
-
-		requestBytes, err := json.Marshal(body)
-		if err != nil {
-			m.IncErrors()
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error": "failed_to_encode_forward_request",
-			})
-			return
-		}
-
-		forwardReq, err := http.NewRequest(http.MethodPost, forwardURL, bytes.NewBuffer(requestBytes))
-		if err != nil {
-			m.IncErrors()
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error": "failed_to_create_forward_request",
-			})
-			return
-		}
-
-		forwardReq.Header.Set("Content-Type", "application/json")
-
-		resp, err := httpClient.Do(forwardReq)
+		result, err := proxy.ForwardWithRetry(httpClient, serviceRegistry, ll, serviceName, body, 2)
 		if err != nil {
 			m.IncErrors()
 			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "failed_to_forward_request",
-			})
-			return
-		}
-		defer resp.Body.Close()
-
-		respBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			m.IncErrors()
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "failed_to_read_backend_response",
-			})
-			return
-		}
-
-		var backendResp map[string]any
-		if err := json.Unmarshal(respBytes, &backendResp); err != nil {
-			m.IncErrors()
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "invalid_backend_response",
-			})
-			return
-		}
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			m.IncErrors()
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error":           "backend_service_error",
-				"backendResponse": backendResp,
+				"error": err.Error(),
 			})
 			return
 		}
@@ -250,10 +184,10 @@ func main() {
 			RequestID:       reqID,
 			Route:           body.Route,
 			Service:         serviceName,
-			RoutedTo:        selected.Name,
-			TargetURL:       selected.URL,
+			RoutedTo:        result.SelectedInstance.Name,
+			TargetURL:       result.SelectedInstance.URL,
 			Status:          "success",
-			BackendResponse: backendResp,
+			BackendResponse: result.BackendResponse,
 		})
 	})
 
