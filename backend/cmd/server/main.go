@@ -122,6 +122,18 @@ func main() {
 		writeJSON(w, http.StatusOK, m.Snapshot())
 	})
 
+	// Services endpoint
+	mux.HandleFunc("/api/v1/services", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
+				"error": "method_not_allowed",
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, m.ServiceSnapshot(serviceRegistry))
+	})
+
 	// Request endpoint
 	mux.HandleFunc("/api/v1/request", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
