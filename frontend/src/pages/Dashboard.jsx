@@ -166,6 +166,28 @@ export default function Dashboard() {
   const [requestLog, setRequestLog] = useState([]);
   const [logFilters, setLogFilters] = useState({ service: "all", status: "all", search: "" });
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [knownInstances, setKnownInstances] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchServices() {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/services`);
+        const data = await res.json();
+        if (cancelled || !data || typeof data !== "object") return;
+        const names = Object.values(data).flatMap((svc) =>
+          (svc?.instances || []).map((inst) => inst?.name).filter(Boolean)
+        );
+        setKnownInstances(Array.from(new Set(names)));
+      } catch {
+        /* ignore */
+      }
+    }
+    fetchServices();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function sendTestRequest() {
     setSending(true);
@@ -252,6 +274,8 @@ export default function Dashboard() {
     const results = { total: 0, success: 0, failed: 0, rateLimited: 0 };
 
     for (let i = 0; i < sim.count; i++) {
+      const start = Date.now();
+      let entry = null;
       try {
         const res = await fetch(`${API_BASE}/api/v1/request`, {
           method: "POST",
@@ -262,6 +286,9 @@ export default function Dashboard() {
           }),
         });
 
+        const latency = Date.now() - start;
+        const data = await res.json().catch(() => ({}));
+
         results.total++;
         if (res.status === 429) {
           results.rateLimited++;
@@ -270,9 +297,31 @@ export default function Dashboard() {
         } else {
           results.failed++;
         }
+
+        entry = {
+          id: data.requestId || crypto.randomUUID(),
+          routedTo: data.routedTo || "—",
+          status: res.status,
+          latency,
+          time: new Date().toLocaleTimeString(),
+          response: data,
+        };
       } catch {
         results.total++;
         results.failed++;
+        entry = {
+          id: crypto.randomUUID().slice(0, 16),
+          routedTo: "—",
+          status: "error",
+          latency: Date.now() - start,
+          time: new Date().toLocaleTimeString(),
+        };
+      }
+
+      if (entry) {
+        setRequestLog((prev) =>
+          [entry, ...prev].slice(0, settings?.maxLogSize || 100)
+        );
       }
 
       setSimResults({ ...results });
@@ -566,7 +615,10 @@ export default function Dashboard() {
             {(() => {
               const visibleLog = filterRequestLog(requestLog, logFilters);
               const uniqueServices = Array.from(
-                new Set(requestLog.map((e) => e.routedTo).filter((s) => s && s !== "—"))
+                new Set([
+                  ...knownInstances,
+                  ...requestLog.map((e) => e.routedTo).filter((s) => s && s !== "—"),
+                ])
               );
               return (
                 <>
