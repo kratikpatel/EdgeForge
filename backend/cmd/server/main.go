@@ -176,6 +176,19 @@ func main() {
 		selected := rr.Select(serviceName, healthyInstances)
 		forwardURL := selected.URL + "/handle"
 
+		if err := serviceRegistry.IncrementActiveRequests(serviceName, selected.Name); err != nil {
+			m.IncErrors()
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error": "failed_to_track_active_request",
+			})
+			return
+		}
+		defer func() {
+			if err := serviceRegistry.DecrementActiveRequests(serviceName, selected.Name); err != nil {
+				log.Printf("failed to decrement active requests for %s/%s: %v", serviceName, selected.Name, err)
+			}
+		}()
+
 		requestBytes, err := json.Marshal(body)
 		if err != nil {
 			m.IncErrors()

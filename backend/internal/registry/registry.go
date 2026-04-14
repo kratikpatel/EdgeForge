@@ -6,9 +6,10 @@ import (
 )
 
 type ServiceInstance struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Healthy bool   `json:"healthy"`
+	Name           string `json:"name"`
+	URL            string `json:"url"`
+	Healthy        bool   `json:"healthy"`
+	ActiveRequests int    `json:"activeRequests"`
 }
 
 type ServiceRegistry struct {
@@ -21,26 +22,30 @@ func New() *ServiceRegistry {
 		services: map[string][]ServiceInstance{
 			"orders": {
 				{
-					Name:    "orders-service-1",
-					URL:     "http://localhost:9001",
-					Healthy: true,
+					Name:           "orders-service-1",
+					URL:            "http://localhost:9001",
+					Healthy:        true,
+					ActiveRequests: 0,
 				},
 				{
-					Name:    "orders-service-2",
-					URL:     "http://localhost:9002",
-					Healthy: true,
+					Name:           "orders-service-2",
+					URL:            "http://localhost:9002",
+					Healthy:        true,
+					ActiveRequests: 0,
 				},
 			},
 			"analytics": {
 				{
-					Name:    "analytics-service-1",
-					URL:     "http://localhost:9011",
-					Healthy: true,
+					Name:           "analytics-service-1",
+					URL:            "http://localhost:9011",
+					Healthy:        true,
+					ActiveRequests: 0,
 				},
 				{
-					Name:    "analytics-service-2",
-					URL:     "http://localhost:9012",
-					Healthy: true,
+					Name:           "analytics-service-2",
+					URL:            "http://localhost:9012",
+					Healthy:        true,
+					ActiveRequests: 0,
 				},
 			},
 		},
@@ -107,6 +112,48 @@ func (r *ServiceRegistry) SetInstanceHealth(serviceName, instanceName string, he
 	for i := range instances {
 		if instances[i].Name == instanceName {
 			instances[i].Healthy = healthy
+			r.services[serviceName] = instances
+			return nil
+		}
+	}
+
+	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
+}
+
+func (r *ServiceRegistry) IncrementActiveRequests(serviceName, instanceName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	instances, ok := r.services[serviceName]
+	if !ok {
+		return fmt.Errorf("service %q not found", serviceName)
+	}
+
+	for i := range instances {
+		if instances[i].Name == instanceName {
+			instances[i].ActiveRequests++
+			r.services[serviceName] = instances
+			return nil
+		}
+	}
+
+	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
+}
+
+func (r *ServiceRegistry) DecrementActiveRequests(serviceName, instanceName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	instances, ok := r.services[serviceName]
+	if !ok {
+		return fmt.Errorf("service %q not found", serviceName)
+	}
+
+	for i := range instances {
+		if instances[i].Name == instanceName {
+			if instances[i].ActiveRequests > 0 {
+				instances[i].ActiveRequests--
+			}
 			r.services[serviceName] = instances
 			return nil
 		}
