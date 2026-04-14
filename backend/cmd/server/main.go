@@ -171,7 +171,7 @@ func main() {
 			return
 		}
 
-		result, err := proxy.ForwardWithRetry(httpClient, serviceRegistry, ll, serviceName, body, 2)
+		result, err := proxy.ForwardWithRetry(httpClient, serviceRegistry, ll, m, serviceName, body, 2)
 		if err != nil {
 			m.IncErrors()
 			writeJSON(w, http.StatusBadGateway, map[string]any{
