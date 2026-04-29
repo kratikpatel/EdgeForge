@@ -13,6 +13,7 @@ type Config struct {
 	RateLimitMax        int
 	RateLimitWindow     time.Duration
 	HealthCheckInterval time.Duration
+	ShutdownTimeout     time.Duration
 }
 
 func Load() Config {
@@ -23,6 +24,7 @@ func Load() Config {
 		RateLimitMax:        getInt("RATE_LIMIT_MAX", 5),
 		RateLimitWindow:     getDuration("RATE_LIMIT_WINDOW", 10*time.Second),
 		HealthCheckInterval: getDuration("HEALTH_CHECK_INTERVAL", 5*time.Second),
+		ShutdownTimeout:     getDuration("SHUTDOWN_TIMEOUT", 5*time.Second),
 	}
 }
 
