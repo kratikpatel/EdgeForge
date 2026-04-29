@@ -31,7 +31,7 @@ func TestForwardWithRetrySucceedsOnFirstHealthyInstance(t *testing.T) {
 
 	result, err := ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
-	}, 2)
+	}, 2, 3, 10*time.Second)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -68,7 +68,7 @@ func TestForwardWithRetryRetriesAfterFailure(t *testing.T) {
 
 	result, err := ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
-	}, 2)
+	}, 2, 3, 10*time.Second)
 	if err != nil {
 		t.Fatalf("expected retry to succeed, got error %v", err)
 	}
@@ -99,7 +99,7 @@ func TestForwardWithRetryFailsWhenAllAttemptsFail(t *testing.T) {
 
 	_, err := ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
-	}, 2)
+	}, 2, 3, 10*time.Second)
 	if err == nil {
 		t.Fatal("expected error when all attempts fail, got nil")
 	}
@@ -126,7 +126,7 @@ func TestForwardWithRetryDecrementsActiveRequestsAfterFailure(t *testing.T) {
 
 	_, _ = ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
 		"route": "/orders",
-	}, 2)
+	}, 2, 3, 10*time.Second)
 
 	instances, err := reg.GetInstances("orders")
 	if err != nil {
@@ -136,6 +136,38 @@ func TestForwardWithRetryDecrementsActiveRequestsAfterFailure(t *testing.T) {
 	for _, instance := range instances {
 		if instance.ActiveRequests != 0 {
 			t.Fatalf("expected active requests to return to 0, got %d for %s", instance.ActiveRequests, instance.Name)
+		}
+	}
+}
+
+func TestForwardWithRetryOpensCircuitAfterRepeatedFailure(t *testing.T) {
+	reg := registry.New()
+	lb := loadbalancer.NewLeastLoaded()
+	metricCollector := metrics.New()
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+
+	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"failed"}`, http.StatusInternalServerError)
+	}))
+	defer badServer.Close()
+
+	_ = reg.SetInstanceHealth("orders", "orders-service-2", false)
+	setInstanceURL(t, reg, "orders", "orders-service-1", badServer.URL)
+
+	_, _ = ForwardWithRetry(client, reg, lb, metricCollector, "orders", map[string]any{
+		"route": "/orders",
+	}, 1, 1, 10*time.Second)
+
+	instances, err := reg.GetInstances("orders")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	for _, instance := range instances {
+		if instance.Name == "orders-service-1" {
+			if instance.CircuitState != registry.CircuitOpen {
+				t.Fatalf("expected circuit to open after failure, got %s", instance.CircuitState)
+			}
 		}
 	}
 }

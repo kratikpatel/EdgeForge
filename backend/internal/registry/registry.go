@@ -3,13 +3,23 @@ package registry
 import (
 	"fmt"
 	"sync"
+	"time"
+)
+
+const (
+	CircuitClosed   = "closed"
+	CircuitOpen     = "open"
+	CircuitHalfOpen = "half-open"
 )
 
 type ServiceInstance struct {
-	Name           string `json:"name"`
-	URL            string `json:"url"`
-	Healthy        bool   `json:"healthy"`
-	ActiveRequests int    `json:"activeRequests"`
+	Name                string    `json:"name"`
+	URL                 string    `json:"url"`
+	Healthy             bool      `json:"healthy"`
+	ActiveRequests      int       `json:"activeRequests"`
+	CircuitState        string    `json:"circuitState"`
+	ConsecutiveFailures int       `json:"consecutiveFailures"`
+	CircuitOpenedAt     time.Time `json:"-"`
 }
 
 type ServiceRegistry struct {
@@ -22,30 +32,30 @@ func New() *ServiceRegistry {
 		services: map[string][]ServiceInstance{
 			"orders": {
 				{
-					Name:           "orders-service-1",
-					URL:            "http://localhost:9001",
-					Healthy:        true,
-					ActiveRequests: 0,
+					Name:         "orders-service-1",
+					URL:          "http://localhost:9001",
+					Healthy:      true,
+					CircuitState: CircuitClosed,
 				},
 				{
-					Name:           "orders-service-2",
-					URL:            "http://localhost:9002",
-					Healthy:        true,
-					ActiveRequests: 0,
+					Name:         "orders-service-2",
+					URL:          "http://localhost:9002",
+					Healthy:      true,
+					CircuitState: CircuitClosed,
 				},
 			},
 			"analytics": {
 				{
-					Name:           "analytics-service-1",
-					URL:            "http://localhost:9011",
-					Healthy:        true,
-					ActiveRequests: 0,
+					Name:         "analytics-service-1",
+					URL:          "http://localhost:9011",
+					Healthy:      true,
+					CircuitState: CircuitClosed,
 				},
 				{
-					Name:           "analytics-service-2",
-					URL:            "http://localhost:9012",
-					Healthy:        true,
-					ActiveRequests: 0,
+					Name:         "analytics-service-2",
+					URL:          "http://localhost:9012",
+					Healthy:      true,
+					CircuitState: CircuitClosed,
 				},
 			},
 		},
@@ -84,6 +94,50 @@ func (r *ServiceRegistry) GetHealthyInstances(serviceName string) ([]ServiceInst
 	}
 
 	return healthy, nil
+}
+
+func (r *ServiceRegistry) GetAvailableInstances(serviceName string, cooldown time.Duration) ([]ServiceInstance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	instances, ok := r.services[serviceName]
+	if !ok {
+		return nil, fmt.Errorf("service %q not found", serviceName)
+	}
+
+	now := time.Now()
+	available := make([]ServiceInstance, 0)
+
+	for i := range instances {
+		if !instances[i].Healthy {
+			continue
+		}
+
+		if instances[i].CircuitState == "" {
+			instances[i].CircuitState = CircuitClosed
+		}
+
+		if instances[i].CircuitState == CircuitOpen {
+			if now.Sub(instances[i].CircuitOpenedAt) >= cooldown {
+				instances[i].CircuitState = CircuitHalfOpen
+				available = append(available, instances[i])
+			}
+
+			continue
+		}
+
+		available = append(available, instances[i])
+	}
+
+	r.services[serviceName] = instances
+
+	if len(available) == 0 {
+		return nil, fmt.Errorf("no available instances for service %q", serviceName)
+	}
+
+	copied := make([]ServiceInstance, len(available))
+	copy(copied, available)
+	return copied, nil
 }
 
 func (r *ServiceRegistry) GetAll() map[string][]ServiceInstance {
@@ -154,6 +208,54 @@ func (r *ServiceRegistry) DecrementActiveRequests(serviceName, instanceName stri
 			if instances[i].ActiveRequests > 0 {
 				instances[i].ActiveRequests--
 			}
+			r.services[serviceName] = instances
+			return nil
+		}
+	}
+
+	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
+}
+
+func (r *ServiceRegistry) RecordInstanceSuccess(serviceName, instanceName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	instances, ok := r.services[serviceName]
+	if !ok {
+		return fmt.Errorf("service %q not found", serviceName)
+	}
+
+	for i := range instances {
+		if instances[i].Name == instanceName {
+			instances[i].ConsecutiveFailures = 0
+			instances[i].CircuitState = CircuitClosed
+			instances[i].CircuitOpenedAt = time.Time{}
+			r.services[serviceName] = instances
+			return nil
+		}
+	}
+
+	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
+}
+
+func (r *ServiceRegistry) RecordInstanceFailure(serviceName, instanceName string, failureThreshold int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	instances, ok := r.services[serviceName]
+	if !ok {
+		return fmt.Errorf("service %q not found", serviceName)
+	}
+
+	for i := range instances {
+		if instances[i].Name == instanceName {
+			instances[i].ConsecutiveFailures++
+
+			if instances[i].ConsecutiveFailures >= failureThreshold {
+				instances[i].CircuitState = CircuitOpen
+				instances[i].CircuitOpenedAt = time.Now()
+			}
+
 			r.services[serviceName] = instances
 			return nil
 		}
