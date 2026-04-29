@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"edgeforge/backend/internal/apiresponse"
 	"edgeforge/backend/internal/config"
 	"edgeforge/backend/internal/loadbalancer"
+	"edgeforge/backend/internal/logger"
 	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/middleware"
 	"edgeforge/backend/internal/proxy"
@@ -71,18 +71,23 @@ func startHealthChecks(
 						latency,
 						failureThreshold,
 					); err != nil {
-						log.Printf("failed to update health for %s/%s: %v", serviceName, instance.Name, err)
+						logger.Error("health_check_update_failed", logger.Fields{
+							"service":  serviceName,
+							"instance": instance.Name,
+							"error":    err.Error(),
+						})
 						continue
 					}
 
-					log.Printf(
-						"health check: service=%s instance=%s success=%v latency=%s threshold=%d",
-						serviceName,
-						instance.Name,
-						healthy,
-						latency,
-						failureThreshold,
-					)
+					logger.Info("health_check_completed", logger.Fields{
+						"service":       serviceName,
+						"instance":      instance.Name,
+						"success":       healthy,
+						"latencyMs":     latency.Milliseconds(),
+						"threshold":     failureThreshold,
+						"instanceUrl":   instance.URL,
+						"previousState": instance.Healthy,
+					})
 				}
 			}
 		}
@@ -214,6 +219,13 @@ func main() {
 		clientIP := getClientIP(r)
 		if !rl.Allow(clientIP) {
 			m.IncRateLimited()
+
+			logger.Error("request_rate_limited", logger.Fields{
+				"clientIP": clientIP,
+				"path":     r.URL.Path,
+				"method":   r.Method,
+			})
+
 			writeRateLimitResponse(w, r)
 			return
 		}
@@ -221,6 +233,14 @@ func main() {
 		var body RequestBody
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			m.IncErrors()
+
+			logger.Error("request_invalid_json", logger.Fields{
+				"clientIP": clientIP,
+				"path":     r.URL.Path,
+				"method":   r.Method,
+				"error":    err.Error(),
+			})
+
 			apiresponse.WriteError(
 				w,
 				r,
@@ -240,6 +260,12 @@ func main() {
 		serviceName := resolveServiceName(body.Route)
 		if serviceName == "" {
 			m.IncErrors()
+
+			logger.Error("request_unknown_route", logger.Fields{
+				"requestId": reqID,
+				"route":     body.Route,
+			})
+
 			apiresponse.WriteError(
 				w,
 				r,
@@ -252,6 +278,13 @@ func main() {
 
 		if _, err := serviceRegistry.GetHealthyInstances(serviceName); err != nil {
 			m.IncErrors()
+
+			logger.Error("request_no_healthy_instances", logger.Fields{
+				"requestId": reqID,
+				"service":   serviceName,
+				"error":     err.Error(),
+			})
+
 			apiresponse.WriteError(
 				w,
 				r,
@@ -261,6 +294,12 @@ func main() {
 			)
 			return
 		}
+
+		logger.Info("request_routing_started", logger.Fields{
+			"requestId": reqID,
+			"route":     body.Route,
+			"service":   serviceName,
+		})
 
 		result, err := proxy.ForwardWithRetry(
 			httpClient,
@@ -275,6 +314,13 @@ func main() {
 		)
 		if err != nil {
 			m.IncErrors()
+
+			logger.Error("request_forwarding_failed", logger.Fields{
+				"requestId": reqID,
+				"service":   serviceName,
+				"error":     err.Error(),
+			})
+
 			apiresponse.WriteError(
 				w,
 				r,
@@ -284,6 +330,14 @@ func main() {
 			)
 			return
 		}
+
+		logger.Info("request_routing_succeeded", logger.Fields{
+			"requestId": reqID,
+			"route":     body.Route,
+			"service":   serviceName,
+			"instance":  result.SelectedInstance.Name,
+			"targetUrl": result.SelectedInstance.URL,
+		})
 
 		apiresponse.WriteJSON(w, http.StatusOK, GatewayResponse{
 			RequestID:       reqID,
@@ -306,7 +360,9 @@ func main() {
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		log.Printf("EdgeForge backend running on %s", cfg.ServerAddress)
+		logger.Info("server_started", logger.Fields{
+			"address": cfg.ServerAddress,
+		})
 
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrors <- err
@@ -318,22 +374,33 @@ func main() {
 
 	select {
 	case err := <-serverErrors:
-		log.Fatalf("server failed: %v", err)
+		logger.Error("server_failed", logger.Fields{
+			"error": err.Error(),
+		})
+		os.Exit(1)
 
 	case sig := <-shutdownSignals:
-		log.Printf("shutdown signal received: %s", sig)
+		logger.Info("shutdown_signal_received", logger.Fields{
+			"signal": sig.String(),
+		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 
 		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("graceful shutdown failed: %v", err)
+			logger.Error("graceful_shutdown_failed", logger.Fields{
+				"error": err.Error(),
+			})
 
 			if closeErr := server.Close(); closeErr != nil {
-				log.Printf("forced server close failed: %v", closeErr)
+				logger.Error("forced_server_close_failed", logger.Fields{
+					"error": closeErr.Error(),
+				})
 			}
 		} else {
-			log.Println("server shut down gracefully")
+			logger.Info("server_shutdown_completed", logger.Fields{
+				"mode": "graceful",
+			})
 		}
 	}
 }
