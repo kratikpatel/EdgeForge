@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"edgeforge/backend/internal/config"
 	"edgeforge/backend/internal/loadbalancer"
 	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/middleware"
@@ -97,15 +98,17 @@ func writeRateLimitResponse(w http.ResponseWriter) {
 }
 
 func main() {
+	cfg := config.Load()
+
 	m := metrics.New()
 	serviceRegistry := registry.New()
 	ll := loadbalancer.NewLeastLoaded()
-	rl := ratelimiter.New(5, 10*time.Second)
+	rl := ratelimiter.New(cfg.RateLimitMax, cfg.RateLimitWindow)
 	httpClient := &http.Client{
-		Timeout: 2 * time.Second,
+		Timeout: cfg.RequestTimeout,
 	}
 
-	startHealthChecks(serviceRegistry, httpClient, 5*time.Second)
+	startHealthChecks(serviceRegistry, httpClient, cfg.HealthCheckInterval)
 
 	mux := http.NewServeMux()
 
@@ -183,7 +186,7 @@ func main() {
 			return
 		}
 
-		result, err := proxy.ForwardWithRetry(httpClient, serviceRegistry, ll, m, serviceName, body, 2)
+		result, err := proxy.ForwardWithRetry(httpClient, serviceRegistry, ll, m, serviceName, body, cfg.RetryCount)
 		if err != nil {
 			m.IncErrors()
 			writeJSON(w, http.StatusBadGateway, map[string]any{
@@ -205,6 +208,6 @@ func main() {
 
 	handler := middleware.WithRequestIDAndLogging(mux)
 
-	log.Println("EdgeForge backend running on :8080")
-	log.Fatal(http.ListenAndServe(":8080", handler))
+	log.Printf("EdgeForge backend running on %s", cfg.ServerAddress)
+	log.Fatal(http.ListenAndServe(cfg.ServerAddress, handler))
 }
