@@ -124,7 +124,34 @@ func main() {
 
 	// Status endpoint
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusMethodNotAllowed,
+				"method_not_allowed",
+				"this endpoint only supports GET requests",
+			)
+			return
+		}
+
 		apiresponse.WriteJSON(w, http.StatusOK, m.Snapshot())
+	})
+
+	// Metrics endpoint
+	mux.HandleFunc("/api/v1/metrics", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusMethodNotAllowed,
+				"method_not_allowed",
+				"this endpoint only supports GET requests",
+			)
+			return
+		}
+
+		apiresponse.WriteJSON(w, http.StatusOK, m.APISnapshot(serviceRegistry))
 	})
 
 	// Services endpoint
