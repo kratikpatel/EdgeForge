@@ -153,12 +153,16 @@ func (m *Metrics) ServiceSnapshot(serviceRegistry *registry.ServiceRegistry) map
 			}
 
 			serviceData["instances"] = append(serviceData["instances"].([]map[string]any), map[string]any{
-				"name":           instance.Name,
-				"url":            instance.URL,
-				"healthy":        instance.Healthy,
-				"activeRequests": instance.ActiveRequests,
-				"requests":       stats.Requests,
-				"failures":       stats.Failures,
+				"name":                instance.Name,
+				"url":                 instance.URL,
+				"healthy":             instance.Healthy,
+				"activeRequests":      instance.ActiveRequests,
+				"requests":            stats.Requests,
+				"failures":            stats.Failures,
+				"circuitState":        instance.CircuitState,
+				"consecutiveFailures": instance.ConsecutiveFailures,
+				"healthCheckFailures": instance.HealthCheckFailures,
+				"lastHealthLatencyMs": instance.LastHealthLatencyMs,
 			})
 		}
 

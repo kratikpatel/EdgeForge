@@ -20,6 +20,8 @@ type ServiceInstance struct {
 	CircuitState        string    `json:"circuitState"`
 	ConsecutiveFailures int       `json:"consecutiveFailures"`
 	CircuitOpenedAt     time.Time `json:"-"`
+	HealthCheckFailures int       `json:"healthCheckFailures"`
+	LastHealthLatencyMs int64     `json:"lastHealthLatencyMs"`
 }
 
 type ServiceRegistry struct {
@@ -254,6 +256,44 @@ func (r *ServiceRegistry) RecordInstanceFailure(serviceName, instanceName string
 			if instances[i].ConsecutiveFailures >= failureThreshold {
 				instances[i].CircuitState = CircuitOpen
 				instances[i].CircuitOpenedAt = time.Now()
+			}
+
+			r.services[serviceName] = instances
+			return nil
+		}
+	}
+
+	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
+}
+
+func (r *ServiceRegistry) RecordHealthCheckResult(
+	serviceName string,
+	instanceName string,
+	success bool,
+	latency time.Duration,
+	failureThreshold int,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	instances, ok := r.services[serviceName]
+	if !ok {
+		return fmt.Errorf("service %q not found", serviceName)
+	}
+
+	for i := range instances {
+		if instances[i].Name == instanceName {
+			instances[i].LastHealthLatencyMs = latency.Milliseconds()
+
+			if success {
+				instances[i].HealthCheckFailures = 0
+				instances[i].Healthy = true
+			} else {
+				instances[i].HealthCheckFailures++
+
+				if instances[i].HealthCheckFailures >= failureThreshold {
+					instances[i].Healthy = false
+				}
 			}
 
 			r.services[serviceName] = instances
