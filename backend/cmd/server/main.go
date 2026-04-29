@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"edgeforge/backend/internal/apiresponse"
 	"edgeforge/backend/internal/config"
 	"edgeforge/backend/internal/loadbalancer"
 	"edgeforge/backend/internal/metrics"
@@ -34,12 +35,6 @@ type GatewayResponse struct {
 	TargetURL       string         `json:"targetUrl"`
 	Status          string         `json:"status"`
 	BackendResponse map[string]any `json:"backendResponse,omitempty"`
-}
-
-func writeJSON(w http.ResponseWriter, statusCode int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(v)
 }
 
 func resolveServiceName(route string) string {
@@ -93,13 +88,15 @@ func getClientIP(r *http.Request) string {
 	return host
 }
 
-func writeRateLimitResponse(w http.ResponseWriter) {
+func writeRateLimitResponse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Retry-After", "10")
-	writeJSON(w, http.StatusTooManyRequests, map[string]any{
-		"error":      "rate_limit_exceeded",
-		"message":    "too many requests from this client",
-		"statusCode": http.StatusTooManyRequests,
-	})
+	apiresponse.WriteError(
+		w,
+		r,
+		http.StatusTooManyRequests,
+		"rate_limit_exceeded",
+		"too many requests from this client",
+	)
 }
 
 func main() {
@@ -119,7 +116,7 @@ func main() {
 
 	// Health endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
+		apiresponse.WriteJSON(w, http.StatusOK, map[string]any{
 			"status":  "ok",
 			"service": "edgeforge-gateway",
 		})
@@ -127,43 +124,55 @@ func main() {
 
 	// Status endpoint
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, m.Snapshot())
+		apiresponse.WriteJSON(w, http.StatusOK, m.Snapshot())
 	})
 
 	// Services endpoint
 	mux.HandleFunc("/api/v1/services", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
-				"error": "method_not_allowed",
-			})
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusMethodNotAllowed,
+				"method_not_allowed",
+				"this endpoint only supports GET requests",
+			)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, m.ServiceSnapshot(serviceRegistry))
+		apiresponse.WriteJSON(w, http.StatusOK, m.ServiceSnapshot(serviceRegistry))
 	})
 
 	// Request endpoint
 	mux.HandleFunc("/api/v1/request", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
-				"error": "method_not_allowed",
-			})
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusMethodNotAllowed,
+				"method_not_allowed",
+				"this endpoint only supports POST requests",
+			)
 			return
 		}
 
 		clientIP := getClientIP(r)
 		if !rl.Allow(clientIP) {
 			m.IncRateLimited()
-			writeRateLimitResponse(w)
+			writeRateLimitResponse(w, r)
 			return
 		}
 
 		var body RequestBody
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			m.IncErrors()
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": "invalid_json",
-			})
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"invalid_json",
+				"request body must be valid JSON",
+			)
 			return
 		}
 
@@ -176,31 +185,50 @@ func main() {
 		serviceName := resolveServiceName(body.Route)
 		if serviceName == "" {
 			m.IncErrors()
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": "unknown_route",
-			})
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"unknown_route",
+				"route must be /orders or /analytics",
+			)
 			return
 		}
 
 		if _, err := serviceRegistry.GetHealthyInstances(serviceName); err != nil {
 			m.IncErrors()
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":   "no_healthy_instances",
-				"service": serviceName,
-			})
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusServiceUnavailable,
+				"no_healthy_instances",
+				"no healthy instances are available for service "+serviceName,
+			)
 			return
 		}
 
-		result, err := proxy.ForwardWithRetry(httpClient, serviceRegistry, ll, m, serviceName, body, cfg.RetryCount)
+		result, err := proxy.ForwardWithRetry(
+			httpClient,
+			serviceRegistry,
+			ll,
+			m,
+			serviceName,
+			body,
+			cfg.RetryCount,
+		)
 		if err != nil {
 			m.IncErrors()
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": err.Error(),
-			})
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusBadGateway,
+				"backend_forwarding_failed",
+				err.Error(),
+			)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, GatewayResponse{
+		apiresponse.WriteJSON(w, http.StatusOK, GatewayResponse{
 			RequestID:       reqID,
 			Route:           body.Route,
 			Service:         serviceName,
