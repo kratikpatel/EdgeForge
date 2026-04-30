@@ -20,6 +20,9 @@ import {
   parseTrace,
   parseServices,
   breakerBadge,
+  getInstancesFromServices,
+  buildChaosPayload,
+  CHAOS_MODES,
 } from "../utils/metrics";
 
 function Card({ title, children }) {
@@ -187,6 +190,28 @@ export default function Dashboard() {
   const [lastResponse, setLastResponse] = useState(null);
   const [lastStatus, setLastStatus] = useState(null);
   const [requestLog, setRequestLog] = useState([]);
+  const [chaosError, setChaosError] = useState("");
+
+  async function injectChaos(instanceName, mode) {
+    setChaosError("");
+    const payload = buildChaosPayload(instanceName, mode);
+    if (!payload) {
+      setChaosError("Invalid instance or mode");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/inject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        setChaosError(`Inject failed: HTTP ${res.status}`);
+      }
+    } catch (e) {
+      setChaosError(e.message || "Inject failed");
+    }
+  }
   const [logFilters, setLogFilters] = useState({ service: "all", status: "all", search: "" });
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [services, setServices] = useState([]);
@@ -1049,6 +1074,98 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
+          </Card>
+
+          {/* Chaos Controls */}
+          <Card title="Chaos Controls">
+            {(() => {
+              const instances = Array.isArray(services)
+                ? services.flatMap((svc) =>
+                    (svc.instances || []).map((inst) => ({
+                      service: svc.service,
+                      name: inst.name,
+                      healthy: inst.healthy,
+                      activeRequests: inst.activeRequests,
+                      injectedMode: inst.injectedMode || "off",
+                    }))
+                  )
+                : [];
+              if (instances.length === 0) {
+                return (
+                  <div style={{ color: "var(--text-secondary)", fontSize: 13, padding: "8px 0" }}>
+                    Waiting for services. Make sure the gateway is running.
+                  </div>
+                );
+              }
+              return (
+                <>
+                  <p style={{ margin: 0, marginBottom: 10, color: "var(--text-secondary)", fontSize: 13 }}>
+                    Inject failure or latency on a backend instance to test resilience.
+                  </p>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", color: "var(--text-secondary)" }}>
+                          <th style={{ padding: "6px 8px" }}>Instance</th>
+                          <th style={{ padding: "6px 8px" }}>Healthy</th>
+                          <th style={{ padding: "6px 8px" }}>Active</th>
+                          <th style={{ padding: "6px 8px" }}>Mode</th>
+                          <th style={{ padding: "6px 8px" }}>Set Mode</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {instances.map((inst) => (
+                          <tr key={inst.name} style={{ borderTop: "1px solid var(--border)" }}>
+                            <td style={{ padding: "8px", fontWeight: 600 }}>{inst.name}</td>
+                            <td style={{ padding: "8px" }}>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 999,
+                                  background: inst.healthy ? "#22c55e" : "#ef4444",
+                                  marginRight: 6,
+                                }}
+                              />
+                              {inst.healthy ? "Up" : "Down"}
+                            </td>
+                            <td style={{ padding: "8px" }}>{inst.activeRequests}</td>
+                            <td style={{ padding: "8px" }}>
+                              <code style={{ fontSize: 11 }}>{inst.injectedMode}</code>
+                            </td>
+                            <td style={{ padding: "8px" }}>
+                              <select
+                                aria-label={`Chaos mode for ${inst.name}`}
+                                value={inst.injectedMode}
+                                onChange={(e) => injectChaos(inst.name, e.target.value)}
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  border: "1px solid var(--border)",
+                                  fontSize: 12,
+                                }}
+                              >
+                                {CHAOS_MODES.map((m) => (
+                                  <option key={m} value={m}>
+                                    {m}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {chaosError && (
+                    <div style={{ marginTop: 10, color: "#b91c1c", fontSize: 13 }}>
+                      {chaosError}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </Card>
 
           {/* Per-Service Metrics */}

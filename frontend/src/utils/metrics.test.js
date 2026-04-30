@@ -18,6 +18,8 @@ import {
   parseServices,
   normalizeBreakerState,
   breakerBadge,
+  getInstancesFromServices,
+  buildChaosPayload,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -653,5 +655,62 @@ describe("normalizeBreakerState / breakerBadge", () => {
     const badge = breakerBadge(undefined);
     expect(badge.label).toBe("—");
     expect(badge.color).toBe("var(--text-secondary)");
+  });
+});
+
+describe("getInstancesFromServices", () => {
+  it("returns empty array for nullish input", () => {
+    expect(getInstancesFromServices(null)).toEqual([]);
+    expect(getInstancesFromServices(undefined)).toEqual([]);
+    expect(getInstancesFromServices({})).toEqual([]);
+  });
+
+  it("flattens services into a list of instances", () => {
+    const result = getInstancesFromServices({
+      orders: {
+        requests: 5,
+        instances: [
+          { name: "orders-1", url: "http://localhost:9001", healthy: true, activeRequests: 1, requests: 3, failures: 0 },
+          { name: "orders-2", url: "http://localhost:9002", healthy: false, activeRequests: 0, requests: 2, failures: 2 },
+        ],
+      },
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ service: "orders", name: "orders-1", healthy: true });
+    expect(result[1]).toMatchObject({ service: "orders", name: "orders-2", healthy: false });
+  });
+
+  it("defaults injectedMode and breakerState when missing", () => {
+    const [inst] = getInstancesFromServices({
+      orders: { instances: [{ name: "orders-1" }] },
+    });
+    expect(inst.injectedMode).toBe("off");
+    expect(inst.breakerState).toBe("closed");
+  });
+
+  it("preserves provided injectedMode and breakerState", () => {
+    const [inst] = getInstancesFromServices({
+      orders: { instances: [{ name: "orders-1", injectedMode: "fail", breakerState: "open" }] },
+    });
+    expect(inst.injectedMode).toBe("fail");
+    expect(inst.breakerState).toBe("open");
+  });
+});
+
+describe("buildChaosPayload", () => {
+  it("returns null for invalid instance", () => {
+    expect(buildChaosPayload("", "fail")).toBe(null);
+    expect(buildChaosPayload(null, "fail")).toBe(null);
+  });
+
+  it("returns null for invalid mode", () => {
+    expect(buildChaosPayload("orders-1", "explode")).toBe(null);
+    expect(buildChaosPayload("orders-1", "")).toBe(null);
+  });
+
+  it("returns payload for valid input", () => {
+    expect(buildChaosPayload("orders-1", "fail")).toEqual({ instance: "orders-1", mode: "fail" });
+    expect(buildChaosPayload("orders-1", "latency")).toEqual({ instance: "orders-1", mode: "latency" });
+    expect(buildChaosPayload("orders-1", "off")).toEqual({ instance: "orders-1", mode: "off" });
   });
 });

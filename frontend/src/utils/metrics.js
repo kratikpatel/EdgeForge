@@ -292,6 +292,36 @@ export function findAlertingServices(requestLog, settings) {
     .sort((a, b) => b.errorRatePct - a.errorRatePct);
 }
 
+export const CHAOS_MODES = ["off", "fail", "latency"];
+
+export function getInstancesFromServices(services) {
+  if (!services || typeof services !== "object") return [];
+  const out = [];
+  for (const [serviceName, info] of Object.entries(services)) {
+    const instances = Array.isArray(info?.instances) ? info.instances : [];
+    for (const inst of instances) {
+      out.push({
+        service: serviceName,
+        name: inst?.name || "unknown",
+        url: inst?.url || "",
+        healthy: !!inst?.healthy,
+        activeRequests: Number(inst?.activeRequests) || 0,
+        requests: Number(inst?.requests) || 0,
+        failures: Number(inst?.failures) || 0,
+        injectedMode: inst?.injectedMode || "off",
+        breakerState: inst?.breakerState || "closed",
+      });
+    }
+  }
+  return out;
+}
+
+export function buildChaosPayload(instance, mode) {
+  if (!instance || typeof instance !== "string") return null;
+  if (!CHAOS_MODES.includes(mode)) return null;
+  return { instance, mode };
+}
+
 export function formatMetricsEntry(reqs, errs, rl, prevReqs, prevErrs, prevRl) {
   return {
     time: new Date().toLocaleTimeString(),
