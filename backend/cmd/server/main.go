@@ -127,24 +127,14 @@ func writeRateLimitResponse(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-func main() {
-	cfg := config.Load()
-
-	m := metrics.New()
-	serviceRegistry := registry.New()
-	ll := loadbalancer.NewLeastLoaded()
-	rl := ratelimiter.New(cfg.RateLimitMax, cfg.RateLimitWindow)
-	httpClient := &http.Client{
-		Timeout: cfg.RequestTimeout,
-	}
-
-	startHealthChecks(
-		serviceRegistry,
-		httpClient,
-		cfg.HealthCheckInterval,
-		cfg.HealthCheckFailureThreshold,
-	)
-
+func buildGatewayHandler(
+	cfg config.Config,
+	m *metrics.Metrics,
+	serviceRegistry *registry.ServiceRegistry,
+	ll *loadbalancer.LeastLoaded,
+	rl *ratelimiter.RateLimiter,
+	httpClient *http.Client,
+) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health endpoint
@@ -350,7 +340,35 @@ func main() {
 		})
 	})
 
-	handler := middleware.WithRequestIDAndLogging(mux)
+	return middleware.WithRequestIDAndLogging(mux)
+}
+
+func main() {
+	cfg := config.Load()
+
+	m := metrics.New()
+	serviceRegistry := registry.New()
+	ll := loadbalancer.NewLeastLoaded()
+	rl := ratelimiter.New(cfg.RateLimitMax, cfg.RateLimitWindow)
+	httpClient := &http.Client{
+		Timeout: cfg.RequestTimeout,
+	}
+
+	startHealthChecks(
+		serviceRegistry,
+		httpClient,
+		cfg.HealthCheckInterval,
+		cfg.HealthCheckFailureThreshold,
+	)
+
+	handler := buildGatewayHandler(
+		cfg,
+		m,
+		serviceRegistry,
+		ll,
+		rl,
+		httpClient,
+	)
 
 	server := &http.Server{
 		Addr:    cfg.ServerAddress,
