@@ -285,3 +285,94 @@ func TestGetAvailableInstancesMovesOpenCircuitToHalfOpenAfterCooldown(t *testing
 		t.Fatal("expected half-open instance to be available after cooldown")
 	}
 }
+
+func TestRecordHealthCheckResultDoesNotMarkUnhealthyBeforeThreshold(t *testing.T) {
+	r := New()
+
+	err := r.RecordHealthCheckResult("orders", "orders-service-1", false, 25*time.Millisecond, 3)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	instances, err := r.GetInstances("orders")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	for _, instance := range instances {
+		if instance.Name == "orders-service-1" {
+			if !instance.Healthy {
+				t.Fatal("expected instance to remain healthy before failure threshold")
+			}
+
+			if instance.HealthCheckFailures != 1 {
+				t.Fatalf("expected health check failures to be 1, got %d", instance.HealthCheckFailures)
+			}
+		}
+	}
+}
+
+func TestRecordHealthCheckResultMarksUnhealthyAtThreshold(t *testing.T) {
+	r := New()
+
+	for i := 0; i < 3; i++ {
+		err := r.RecordHealthCheckResult("orders", "orders-service-1", false, 25*time.Millisecond, 3)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	}
+
+	instances, err := r.GetInstances("orders")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	for _, instance := range instances {
+		if instance.Name == "orders-service-1" {
+			if instance.Healthy {
+				t.Fatal("expected instance to be unhealthy after reaching failure threshold")
+			}
+
+			if instance.HealthCheckFailures != 3 {
+				t.Fatalf("expected health check failures to be 3, got %d", instance.HealthCheckFailures)
+			}
+		}
+	}
+}
+
+func TestRecordHealthCheckResultSuccessRestoresHealth(t *testing.T) {
+	r := New()
+
+	for i := 0; i < 3; i++ {
+		err := r.RecordHealthCheckResult("orders", "orders-service-1", false, 25*time.Millisecond, 3)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	}
+
+	err := r.RecordHealthCheckResult("orders", "orders-service-1", true, 10*time.Millisecond, 3)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	instances, err := r.GetInstances("orders")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	for _, instance := range instances {
+		if instance.Name == "orders-service-1" {
+			if !instance.Healthy {
+				t.Fatal("expected instance to become healthy after successful health check")
+			}
+
+			if instance.HealthCheckFailures != 0 {
+				t.Fatalf("expected health check failures to reset to 0, got %d", instance.HealthCheckFailures)
+			}
+
+			if instance.LastHealthLatencyMs != 10 {
+				t.Fatalf("expected last health latency to be 10ms, got %d", instance.LastHealthLatencyMs)
+			}
+		}
+	}
+}

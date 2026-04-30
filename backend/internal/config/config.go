@@ -16,6 +16,7 @@ type Config struct {
 	ShutdownTimeout                time.Duration
 	CircuitBreakerFailureThreshold int
 	CircuitBreakerCooldown         time.Duration
+	HealthCheckFailureThreshold    int
 }
 
 func Load() Config {
@@ -29,6 +30,7 @@ func Load() Config {
 		ShutdownTimeout:                getDuration("SHUTDOWN_TIMEOUT", 5*time.Second),
 		CircuitBreakerFailureThreshold: getInt("CIRCUIT_BREAKER_FAILURE_THRESHOLD", 3),
 		CircuitBreakerCooldown:         getDuration("CIRCUIT_BREAKER_COOLDOWN", 10*time.Second),
+		HealthCheckFailureThreshold:    getInt("HEALTH_CHECK_FAILURE_THRESHOLD", 3),
 	}
 }
 

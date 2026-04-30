@@ -48,7 +48,12 @@ func resolveServiceName(route string) string {
 	}
 }
 
-func startHealthChecks(serviceRegistry *registry.ServiceRegistry, client *http.Client, interval time.Duration) {
+func startHealthChecks(
+	serviceRegistry *registry.ServiceRegistry,
+	client *http.Client,
+	interval time.Duration,
+	failureThreshold int,
+) {
 	ticker := time.NewTicker(interval)
 
 	go func() {
@@ -57,27 +62,45 @@ func startHealthChecks(serviceRegistry *registry.ServiceRegistry, client *http.C
 
 			for serviceName, instances := range allServices {
 				for _, instance := range instances {
-					healthy := checkInstanceHealth(client, instance.URL)
-					if err := serviceRegistry.SetInstanceHealth(serviceName, instance.Name, healthy); err != nil {
+					healthy, latency := checkInstanceHealth(client, instance.URL)
+
+					if err := serviceRegistry.RecordHealthCheckResult(
+						serviceName,
+						instance.Name,
+						healthy,
+						latency,
+						failureThreshold,
+					); err != nil {
 						log.Printf("failed to update health for %s/%s: %v", serviceName, instance.Name, err)
 						continue
 					}
 
-					log.Printf("health check: service=%s instance=%s healthy=%v", serviceName, instance.Name, healthy)
+					log.Printf(
+						"health check: service=%s instance=%s success=%v latency=%s threshold=%d",
+						serviceName,
+						instance.Name,
+						healthy,
+						latency,
+						failureThreshold,
+					)
 				}
 			}
 		}
 	}()
 }
 
-func checkInstanceHealth(client *http.Client, baseURL string) bool {
+func checkInstanceHealth(client *http.Client, baseURL string) (bool, time.Duration) {
+	start := time.Now()
+
 	resp, err := client.Get(baseURL + "/health")
+	latency := time.Since(start)
+
 	if err != nil {
-		return false
+		return false, latency
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
+	return resp.StatusCode >= 200 && resp.StatusCode < 300, latency
 }
 
 func getClientIP(r *http.Request) string {
@@ -110,7 +133,12 @@ func main() {
 		Timeout: cfg.RequestTimeout,
 	}
 
-	startHealthChecks(serviceRegistry, httpClient, cfg.HealthCheckInterval)
+	startHealthChecks(
+		serviceRegistry,
+		httpClient,
+		cfg.HealthCheckInterval,
+		cfg.HealthCheckFailureThreshold,
+	)
 
 	mux := http.NewServeMux()
 
