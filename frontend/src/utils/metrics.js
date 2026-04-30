@@ -212,6 +212,30 @@ export function computeServiceErrorRates(requestLog, windowSize = 20) {
   }));
 }
 
+export function parseTrace(entry) {
+  const trace = entry?.response?.trace ?? entry?.trace;
+  if (!Array.isArray(trace) || trace.length === 0) return [];
+
+  return trace.map((step, i) => {
+    const attempt = Number(step?.attempt);
+    const latencyMs = Number(step?.latencyMs);
+    const rawStatus = (step?.status ?? "").toString().toLowerCase();
+    const outcome =
+      rawStatus === "success" || rawStatus === "ok"
+        ? "success"
+        : rawStatus === "fail" || rawStatus === "error" || rawStatus === "failure"
+          ? "fail"
+          : rawStatus || "unknown";
+    return {
+      attempt: Number.isFinite(attempt) && attempt > 0 ? attempt : i + 1,
+      instance: step?.instance || "—",
+      outcome,
+      latencyMs: Number.isFinite(latencyMs) ? latencyMs : null,
+      error: step?.error || null,
+    };
+  });
+}
+
 export function findAlertingServices(requestLog, settings) {
   if (!settings?.enableAlerts) return [];
   const threshold = Number(settings?.errorRateAlertPct);

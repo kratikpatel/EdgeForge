@@ -273,6 +273,58 @@ describe("Dashboard", () => {
     expect(screen.getByText(/Error rate above 10%/i)).toBeInTheDocument();
   });
 
+  it("renders the trace timeline in the request detail modal when trace is present", async () => {
+    localStorage.clear();
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      if (url.includes("/api/v1/request")) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            requestId: "trace-req-1",
+            routedTo: "orders-service-2",
+            status: "success",
+            trace: [
+              { attempt: 1, instance: "orders-service-1", status: "fail", latencyMs: 120, error: "connection refused" },
+              { attempt: 2, instance: "orders-service-2", status: "success", latencyMs: 30 },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: "ok" }) });
+    });
+    render(<Dashboard />);
+    fireEvent.click(screen.getByRole("button", { name: "Send Test Request" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("orders-service-2").length).toBeGreaterThan(0);
+    });
+    const row = screen.getAllByText("orders-service-2").find((el) => el.tagName === "TD");
+    fireEvent.click(row);
+    expect(screen.getByLabelText("Request trace timeline")).toBeInTheDocument();
+    expect(screen.getByText(/Trace \(2 attempts\)/i)).toBeInTheDocument();
+    expect(screen.getByText("connection refused")).toBeInTheDocument();
+  });
+
+  it("does not render the trace section when the response has no trace", async () => {
+    localStorage.clear();
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      if (url.includes("/api/v1/request")) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({ requestId: "no-trace", routedTo: "orders-service-1", status: "success" }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: "ok" }) });
+    });
+    render(<Dashboard />);
+    fireEvent.click(screen.getByRole("button", { name: "Send Test Request" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("orders-service-1").length).toBeGreaterThan(0);
+    });
+    const row = screen.getAllByText("orders-service-1").find((el) => el.tagName === "TD");
+    fireEvent.click(row);
+    expect(screen.queryByLabelText("Request trace timeline")).not.toBeInTheDocument();
+  });
+
   it("dismisses the alert banner when Dismiss is clicked", async () => {
     localStorage.clear();
     let callIdx = 0;
