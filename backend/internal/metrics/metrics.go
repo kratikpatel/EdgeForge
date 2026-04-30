@@ -167,3 +167,10 @@ func (m *Metrics) ServiceSnapshot(serviceRegistry *registry.ServiceRegistry) map
 
 	return result
 }
+
+func (m *Metrics) APISnapshot(serviceRegistry *registry.ServiceRegistry) map[string]any {
+	return map[string]any{
+		"gateway":  m.Snapshot(),
+		"services": m.ServiceSnapshot(serviceRegistry),
+	}
+}

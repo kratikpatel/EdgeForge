@@ -123,3 +123,42 @@ func TestServiceSnapshotIncludesRegistryState(t *testing.T) {
 		t.Fatal("expected to find orders-service-1 in service snapshot")
 	}
 }
+
+func TestAPISnapshotIncludesGatewayAndServiceMetrics(t *testing.T) {
+	m := New()
+	reg := registry.New()
+
+	m.IncRequests()
+	m.IncErrors()
+	m.IncServiceRequests("orders")
+	m.IncInstanceRequests("orders", "orders-service-1")
+
+	snapshot := m.APISnapshot(reg)
+
+	gateway, ok := snapshot["gateway"].(map[string]any)
+	if !ok {
+		t.Fatal("expected gateway metrics in API snapshot")
+	}
+
+	if gateway["requestsTotal"].(uint64) != 1 {
+		t.Fatalf("expected gateway requestsTotal to be 1, got %v", gateway["requestsTotal"])
+	}
+
+	if gateway["errorsTotal"].(uint64) != 1 {
+		t.Fatalf("expected gateway errorsTotal to be 1, got %v", gateway["errorsTotal"])
+	}
+
+	services, ok := snapshot["services"].(map[string]any)
+	if !ok {
+		t.Fatal("expected services metrics in API snapshot")
+	}
+
+	orders, ok := services["orders"].(map[string]any)
+	if !ok {
+		t.Fatal("expected orders service metrics in API snapshot")
+	}
+
+	if orders["requests"].(uint64) != 1 {
+		t.Fatalf("expected orders requests to be 1, got %v", orders["requests"])
+	}
+}
