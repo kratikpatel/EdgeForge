@@ -12,6 +12,7 @@ func TestLoadReturnsDefaultConfigValues(t *testing.T) {
 	t.Setenv("RATE_LIMIT_MAX", "")
 	t.Setenv("RATE_LIMIT_WINDOW", "")
 	t.Setenv("HEALTH_CHECK_INTERVAL", "")
+	t.Setenv("SHUTDOWN_TIMEOUT", "")
 
 	cfg := Load()
 
@@ -38,6 +39,9 @@ func TestLoadReturnsDefaultConfigValues(t *testing.T) {
 	if cfg.HealthCheckInterval != 5*time.Second {
 		t.Fatalf("expected HealthCheckInterval to be 5s, got %s", cfg.HealthCheckInterval)
 	}
+	if cfg.ShutdownTimeout != 5*time.Second {
+		t.Fatalf("expected ShutdownTimeout to be 5s, got %s", cfg.ShutdownTimeout)
+	}
 }
 
 func TestLoadReadsEnvironmentVariables(t *testing.T) {
@@ -47,6 +51,7 @@ func TestLoadReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("RATE_LIMIT_MAX", "10")
 	t.Setenv("RATE_LIMIT_WINDOW", "30s")
 	t.Setenv("HEALTH_CHECK_INTERVAL", "15s")
+	t.Setenv("SHUTDOWN_TIMEOUT", "8s")
 
 	cfg := Load()
 
@@ -73,6 +78,9 @@ func TestLoadReadsEnvironmentVariables(t *testing.T) {
 	if cfg.HealthCheckInterval != 15*time.Second {
 		t.Fatalf("expected HealthCheckInterval to be 15s, got %s", cfg.HealthCheckInterval)
 	}
+	if cfg.ShutdownTimeout != 8*time.Second {
+		t.Fatalf("expected ShutdownTimeout to be 8s, got %s", cfg.ShutdownTimeout)
+	}
 }
 
 func TestLoadFallsBackWhenEnvironmentVariablesAreInvalid(t *testing.T) {
@@ -81,6 +89,7 @@ func TestLoadFallsBackWhenEnvironmentVariablesAreInvalid(t *testing.T) {
 	t.Setenv("RATE_LIMIT_MAX", "bad-int")
 	t.Setenv("RATE_LIMIT_WINDOW", "bad-duration")
 	t.Setenv("HEALTH_CHECK_INTERVAL", "bad-duration")
+	t.Setenv("SHUTDOWN_TIMEOUT", "bad-duration")
 
 	cfg := Load()
 

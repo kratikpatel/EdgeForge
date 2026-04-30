@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"edgeforge/backend/internal/config"
@@ -208,6 +213,42 @@ func main() {
 
 	handler := middleware.WithRequestIDAndLogging(mux)
 
-	log.Printf("EdgeForge backend running on %s", cfg.ServerAddress)
-	log.Fatal(http.ListenAndServe(cfg.ServerAddress, handler))
+	server := &http.Server{
+		Addr:    cfg.ServerAddress,
+		Handler: handler,
+	}
+
+	serverErrors := make(chan error, 1)
+
+	go func() {
+		log.Printf("EdgeForge backend running on %s", cfg.ServerAddress)
+
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErrors <- err
+		}
+	}()
+
+	shutdownSignals := make(chan os.Signal, 1)
+	signal.Notify(shutdownSignals, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErrors:
+		log.Fatalf("server failed: %v", err)
+
+	case sig := <-shutdownSignals:
+		log.Printf("shutdown signal received: %s", sig)
+
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("graceful shutdown failed: %v", err)
+
+			if closeErr := server.Close(); closeErr != nil {
+				log.Printf("forced server close failed: %v", closeErr)
+			}
+		} else {
+			log.Println("server shut down gracefully")
+		}
+	}
 }
