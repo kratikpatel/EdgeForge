@@ -12,6 +12,8 @@ import {
   saveSettings,
   resolveTheme,
   applyTheme,
+  computeServiceErrorRates,
+  findAlertingServices,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -348,5 +350,139 @@ describe("resolveTheme / applyTheme", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     applyTheme("light");
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+  });
+});
+
+describe("computeServiceErrorRates", () => {
+  it("returns empty array for empty log", () => {
+    expect(computeServiceErrorRates([])).toEqual([]);
+    expect(computeServiceErrorRates(null)).toEqual([]);
+  });
+
+  it("computes per-service error rate", () => {
+    const log = [
+      { routedTo: "orders-1", status: 500 },
+      { routedTo: "orders-1", status: 200 },
+      { routedTo: "orders-1", status: 500 },
+      { routedTo: "orders-1", status: 200 },
+    ];
+    const result = computeServiceErrorRates(log);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      service: "orders-1",
+      total: 4,
+      errors: 2,
+      errorRatePct: 50,
+    });
+  });
+
+  it("excludes 429 from errors and 'unknown' (no routedTo) from results", () => {
+    const log = [
+      { routedTo: "orders-1", status: 429 },
+      { routedTo: "orders-1", status: 200 },
+      { status: 500 },
+      { routedTo: "—", status: 500 },
+    ];
+    const result = computeServiceErrorRates(log);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      service: "orders-1",
+      total: 2,
+      errors: 0,
+      errorRatePct: 0,
+    });
+  });
+
+  it("treats string 'error' status as a failure (network errors)", () => {
+    const log = [
+      { routedTo: "orders-1", status: "error" },
+      { routedTo: "orders-1", status: 200 },
+    ];
+    const result = computeServiceErrorRates(log);
+    expect(result[0].errors).toBe(1);
+    expect(result[0].errorRatePct).toBe(50);
+  });
+
+  it("respects windowSize and only looks at the most recent N entries (newest-first log)", () => {
+    const log = [
+      { routedTo: "orders-1", status: 500 },
+      { routedTo: "orders-1", status: 500 },
+      { routedTo: "orders-1", status: 200 },
+      { routedTo: "orders-1", status: 200 },
+      { routedTo: "orders-1", status: 200 },
+    ];
+    expect(computeServiceErrorRates(log, 2)[0]).toEqual({
+      service: "orders-1",
+      total: 2,
+      errors: 2,
+      errorRatePct: 100,
+    });
+  });
+});
+
+describe("findAlertingServices", () => {
+  const log = [
+    { routedTo: "orders-1", status: 500 },
+    { routedTo: "orders-1", status: 500 },
+    { routedTo: "orders-1", status: 500 },
+    { routedTo: "orders-1", status: 200 },
+    { routedTo: "analytics-1", status: 200 },
+    { routedTo: "analytics-1", status: 200 },
+    { routedTo: "analytics-1", status: 200 },
+  ];
+
+  it("returns empty list when alerts disabled", () => {
+    expect(findAlertingServices(log, { enableAlerts: false, errorRateAlertPct: 10 })).toEqual([]);
+  });
+
+  it("returns services exceeding the threshold", () => {
+    const result = findAlertingServices(log, {
+      enableAlerts: true,
+      errorRateAlertPct: 50,
+      alertWindowSize: 50,
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].service).toBe("orders-1");
+    expect(result[0].errorRatePct).toBe(75);
+  });
+
+  it("returns empty list when no service crosses the threshold", () => {
+    const result = findAlertingServices(log, {
+      enableAlerts: true,
+      errorRateAlertPct: 90,
+      alertWindowSize: 50,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("ignores services with fewer than 3 requests in the window", () => {
+    const tinyLog = [
+      { routedTo: "orders-1", status: 500 },
+      { routedTo: "orders-1", status: 500 },
+    ];
+    expect(
+      findAlertingServices(tinyLog, {
+        enableAlerts: true,
+        errorRateAlertPct: 10,
+        alertWindowSize: 50,
+      })
+    ).toEqual([]);
+  });
+
+  it("sorts highest error rate first", () => {
+    const mixedLog = [
+      { routedTo: "a", status: 500 },
+      { routedTo: "a", status: 500 },
+      { routedTo: "a", status: 200 },
+      { routedTo: "b", status: 500 },
+      { routedTo: "b", status: 500 },
+      { routedTo: "b", status: 500 },
+    ];
+    const result = findAlertingServices(mixedLog, {
+      enableAlerts: true,
+      errorRateAlertPct: 10,
+      alertWindowSize: 50,
+    });
+    expect(result.map((r) => r.service)).toEqual(["b", "a"]);
   });
 });

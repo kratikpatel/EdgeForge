@@ -39,4 +39,12 @@ describe("EdgeForge Dashboard", () => {
     cy.reload();
     cy.get("html").should("have.attr", "data-theme", "dark");
   });
+
+  it("exposes the alert threshold control in settings", () => {
+    cy.window().then((win) => win.localStorage.clear());
+    cy.reload();
+    cy.contains("Show Settings").click();
+    cy.get('input[aria-label="Enable error rate alerts"]').should("exist").and("be.checked");
+    cy.get('input[aria-label="Error rate alert threshold"]').should("have.value", "10");
+  });
 });
