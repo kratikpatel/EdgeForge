@@ -15,6 +15,9 @@ import {
   computeServiceErrorRates,
   findAlertingServices,
   parseTrace,
+  parseServices,
+  normalizeBreakerState,
+  breakerBadge,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -559,5 +562,96 @@ describe("parseTrace", () => {
     const entry = { trace: [{ attempt: 1, instance: "a", status: "success" }] };
     expect(parseTrace(entry)).toHaveLength(1);
   });
+});
 
+describe("parseServices", () => {
+  it("returns empty array for null/non-object input", () => {
+    expect(parseServices(null)).toEqual([]);
+    expect(parseServices(undefined)).toEqual([]);
+    expect(parseServices("nope")).toEqual([]);
+  });
+
+  it("normalizes a multi-service registry response", () => {
+    const data = {
+      orders: {
+        requests: 5,
+        instances: [
+          {
+            name: "orders-service-1",
+            url: "http://localhost:9001",
+            healthy: true,
+            activeRequests: 0,
+            requests: 3,
+            failures: 1,
+            breaker: "closed",
+          },
+          {
+            name: "orders-service-2",
+            url: "http://localhost:9002",
+            healthy: false,
+            activeRequests: 0,
+            requests: 2,
+            failures: 5,
+            breaker: "open",
+          },
+        ],
+      },
+    };
+    const result = parseServices(data);
+    expect(result).toHaveLength(1);
+    expect(result[0].service).toBe("orders");
+    expect(result[0].requests).toBe(5);
+    expect(result[0].instances).toHaveLength(2);
+    expect(result[0].instances[0].breaker).toBe("closed");
+    expect(result[0].instances[1].breaker).toBe("open");
+    expect(result[0].instances[1].healthy).toBe(false);
+  });
+
+  it("falls back to safe defaults for missing fields", () => {
+    const data = { analytics: { instances: [{ name: "analytics-1" }] } };
+    const result = parseServices(data);
+    const inst = result[0].instances[0];
+    expect(inst.healthy).toBe(true);
+    expect(inst.activeRequests).toBe(0);
+    expect(inst.requests).toBe(0);
+    expect(inst.failures).toBe(0);
+    expect(inst.breaker).toBe("unknown");
+  });
+
+  it("handles a service with no instances", () => {
+    const data = { orders: { requests: 0 } };
+    expect(parseServices(data)[0]).toEqual({
+      service: "orders",
+      requests: 0,
+      instances: [],
+    });
+  });
+});
+
+describe("normalizeBreakerState / breakerBadge", () => {
+  it("normalizes known states", () => {
+    expect(normalizeBreakerState("OPEN")).toBe("open");
+    expect(normalizeBreakerState("Half-Open")).toBe("half-open");
+    expect(normalizeBreakerState("half_open")).toBe("half-open");
+    expect(normalizeBreakerState("closed")).toBe("closed");
+  });
+
+  it("returns 'unknown' for missing or invalid states", () => {
+    expect(normalizeBreakerState(undefined)).toBe("unknown");
+    expect(normalizeBreakerState("")).toBe("unknown");
+    expect(normalizeBreakerState("tripped")).toBe("unknown");
+  });
+
+  it("breakerBadge returns red palette for open, yellow for half-open, green for closed", () => {
+    expect(breakerBadge("open").label).toBe("open");
+    expect(breakerBadge("open").color).toBe("#b91c1c");
+    expect(breakerBadge("half-open").color).toBe("#92400e");
+    expect(breakerBadge("closed").color).toBe("#065f46");
+  });
+
+  it("breakerBadge falls back to neutral palette for unknown state", () => {
+    const badge = breakerBadge(undefined);
+    expect(badge.label).toBe("—");
+    expect(badge.color).toBe("var(--text-secondary)");
+  });
 });

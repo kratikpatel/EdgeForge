@@ -212,6 +212,51 @@ export function computeServiceErrorRates(requestLog, windowSize = 20) {
   }));
 }
 
+export function parseServices(data) {
+  if (!data || typeof data !== "object") return [];
+
+  return Object.entries(data).map(([service, raw]) => {
+    const instances = Array.isArray(raw?.instances) ? raw.instances : [];
+    return {
+      service,
+      requests: Number.isFinite(Number(raw?.requests)) ? Number(raw.requests) : 0,
+      instances: instances.map((inst) => ({
+        name: inst?.name || "—",
+        url: inst?.url || "",
+        healthy: inst?.healthy !== false,
+        activeRequests: Number.isFinite(Number(inst?.activeRequests))
+          ? Number(inst.activeRequests)
+          : 0,
+        requests: Number.isFinite(Number(inst?.requests)) ? Number(inst.requests) : 0,
+        failures: Number.isFinite(Number(inst?.failures)) ? Number(inst.failures) : 0,
+        breaker: normalizeBreakerState(inst?.breaker),
+      })),
+    };
+  });
+}
+
+export function normalizeBreakerState(state) {
+  const s = (state ?? "").toString().toLowerCase().trim();
+  if (s === "open") return "open";
+  if (s === "half-open" || s === "halfopen" || s === "half_open") return "half-open";
+  if (s === "closed") return "closed";
+  return "unknown";
+}
+
+export function breakerBadge(state) {
+  const normalized = normalizeBreakerState(state);
+  switch (normalized) {
+    case "open":
+      return { label: "open", bg: "#fef2f2", color: "#b91c1c", border: "#fecaca" };
+    case "half-open":
+      return { label: "half-open", bg: "#fffbeb", color: "#92400e", border: "#fde68a" };
+    case "closed":
+      return { label: "closed", bg: "#ecfdf5", color: "#065f46", border: "#a7f3d0" };
+    default:
+      return { label: "—", bg: "var(--bg-muted)", color: "var(--text-secondary)", border: "var(--border)" };
+  }
+}
+
 export function parseTrace(entry) {
   const trace = entry?.response?.trace ?? entry?.trace;
   if (!Array.isArray(trace) || trace.length === 0) return [];

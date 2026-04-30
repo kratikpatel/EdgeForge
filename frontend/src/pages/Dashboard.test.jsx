@@ -273,6 +273,55 @@ describe("Dashboard", () => {
     expect(screen.getByText(/Error rate above 10%/i)).toBeInTheDocument();
   });
 
+  it("renders the Services Status panel with breaker badges from /api/v1/services", async () => {
+    localStorage.clear();
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      if (url.includes("/api/v1/services")) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            orders: {
+              requests: 5,
+              instances: [
+                { name: "orders-service-1", url: "http://localhost:9001", healthy: true, activeRequests: 0, requests: 3, failures: 1, breaker: "closed" },
+                { name: "orders-service-2", url: "http://localhost:9002", healthy: false, activeRequests: 0, requests: 2, failures: 5, breaker: "open" },
+              ],
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: "ok" }) });
+    });
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByTestId("breaker-orders-service-1")).toHaveTextContent("closed");
+      expect(screen.getByTestId("breaker-orders-service-2")).toHaveTextContent("open");
+    });
+    expect(screen.getByLabelText("orders instances")).toBeInTheDocument();
+  });
+
+  it("shows '—' breaker badge when backend has not yet returned breaker state", async () => {
+    localStorage.clear();
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      if (url.includes("/api/v1/services")) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            orders: {
+              requests: 0,
+              instances: [{ name: "orders-service-1", url: "http://localhost:9001", healthy: true }],
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: "ok" }) });
+    });
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByTestId("breaker-orders-service-1")).toHaveTextContent("—");
+    });
+  });
+
   it("renders the trace timeline in the request detail modal when trace is present", async () => {
     localStorage.clear();
     vi.spyOn(global, "fetch").mockImplementation((url) => {
