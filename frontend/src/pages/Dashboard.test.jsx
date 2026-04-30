@@ -200,4 +200,29 @@ describe("Dashboard", () => {
     expect(screen.getAllByText("Settings").length).toBeGreaterThan(0);
     expect(screen.getByText("Show Settings")).toBeInTheDocument();
   });
+
+  it("applies a theme attribute on documentElement on mount", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    document.documentElement.removeAttribute("data-theme");
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(document.documentElement.getAttribute("data-theme")).toMatch(/light|dark/);
+    });
+  });
+
+  it("flips data-theme to dark when the theme select is set to Dark", async () => {
+    localStorage.clear();
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    fireEvent.click(screen.getByText("Show Settings"));
+    const themeSelect = screen.getByLabelText("Theme");
+    fireEvent.change(themeSelect, { target: { value: "dark" } });
+    await waitFor(() => {
+      expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    });
+  });
 });
