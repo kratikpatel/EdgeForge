@@ -10,7 +10,15 @@ const (
 	CircuitClosed   = "closed"
 	CircuitOpen     = "open"
 	CircuitHalfOpen = "half-open"
+
+	InjectOff     = "off"
+	InjectFail    = "fail"
+	InjectLatency = "latency"
 )
+
+func IsValidInjectMode(mode string) bool {
+	return mode == InjectOff || mode == InjectFail || mode == InjectLatency
+}
 
 type ServiceInstance struct {
 	Name                string    `json:"name"`
@@ -22,6 +30,7 @@ type ServiceInstance struct {
 	CircuitOpenedAt     time.Time `json:"-"`
 	HealthCheckFailures int       `json:"healthCheckFailures"`
 	LastHealthLatencyMs int64     `json:"lastHealthLatencyMs"`
+	InjectedMode        string    `json:"injectedMode"`
 }
 
 type ServiceRegistry struct {
@@ -302,6 +311,27 @@ func (r *ServiceRegistry) RecordHealthCheckResult(
 	}
 
 	return fmt.Errorf("instance %q not found for service %q", instanceName, serviceName)
+}
+
+func (r *ServiceRegistry) SetInjectedMode(instanceName, mode string) error {
+	if !IsValidInjectMode(mode) {
+		return fmt.Errorf("invalid inject mode %q", mode)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for serviceName, instances := range r.services {
+		for i := range instances {
+			if instances[i].Name == instanceName {
+				instances[i].InjectedMode = mode
+				r.services[serviceName] = instances
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("instance %q not found", instanceName)
 }
 
 func (r *ServiceRegistry) SetServices(services map[string][]ServiceInstance) {

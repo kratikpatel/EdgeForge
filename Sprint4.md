@@ -1,112 +1,33 @@
 # Sprint 4 Summary
 
-## Team Members
+## Team
 
 - **Kratik Patel** — Backend
 - **Yash** — Frontend
 
----
-
 ## Sprint Goal
 
-The goal of Sprint 4 was to move **EdgeForge** from a working distributed API gateway simulation toward a more production-like backend system.
-
-The sprint focused on:
-
-- Backend resilience
-- Observability
-- Configuration flexibility
-- Consistent API responses
-- Health monitoring
-- Fault tolerance
-- Stronger backend testing
-
-By the end of Sprint 4, the backend gateway included graceful shutdown, centralized configuration, standardized error responses, circuit breaker logic, improved health checks, structured JSON logging, a dedicated metrics API, and integration tests.
-
----
+Move EdgeForge from a working API gateway simulation toward a production-like system. Backend focused on resilience, observability, and configuration. Frontend focused on surfacing the new backend signals (circuit state, traces, error rates) and adding usability features (dark mode, chaos controls).
 
 ## Project Overview
 
-**EdgeForge** is a Go-based API Gateway system that simulates a distributed backend architecture.
-
-### Request Flow
+EdgeForge is a Go-based API gateway that simulates a distributed backend.
 
 ```text
 Client → Gateway → Load Balancer → Microservices → Response
 ```
 
-### Gateway Responsibilities
-
-The gateway is responsible for:
-
-- Receiving client requests
-- Resolving the correct backend service
-- Selecting the best service instance
-- Forwarding requests
-- Retrying failed requests
-- Tracking health and metrics
-- Returning consistent responses to the client
+The gateway resolves routes, picks a healthy instance, forwards the request with retries, and returns a consistent response. Sprint 4 hardened the gateway and built a dashboard to observe and control it.
 
 ---
 
-## Existing Functionality Before Sprint 4
+# Backend Work
 
-Before Sprint 4, the backend already included:
+## 1. Config Management (`backend/internal/config/`)
 
-- Basic Go server setup
-- `/health` endpoint
-- `/api/v1/status` endpoint
-- `/api/v1/request` routing endpoint
-- Request ID middleware
-- Logging middleware
-- Mock routing from Sprint 1
-- Real mock microservices from Sprint 2
-- Service registry
-- Round-robin load balancing
-- Least-loaded load balancing
-- Rate limiting
-- Retry and timeout handling
-- Active request tracking
-- Per-service and per-instance metrics
-- Service discovery endpoint
-- Backend unit tests for registry, load balancer, proxy, metrics, and rate limiter
+Replaced hardcoded gateway values with a centralized config loaded from environment variables, with safe defaults.
 
----
-
-# Work Completed in Sprint 4
-
-## 1. Config Management System
-
-A centralized backend configuration package was added to remove hardcoded gateway values from `main.go`.
-
-### What Was Implemented
-
-A new package was created:
-
-```text
-backend/internal/config/
-```
-
-The config system now manages:
-
-- Server address
-- Request timeout
-- Retry count
-- Rate limit max requests
-- Rate limit window
-- Health check interval
-- Shutdown timeout
-- Circuit breaker failure threshold
-- Circuit breaker cooldown
-- Health check failure threshold
-
-### Why This Was Needed
-
-Previously, values such as retry count, timeout duration, rate limit settings, and health check interval were hardcoded. This made the backend harder to tune and less realistic.
-
-With this update, the backend now supports safe default values and environment-based configuration.
-
-### Example Config Values
+Configurable values: server address, request timeout, retry count, rate limit (max + window), health check interval, shutdown timeout, circuit breaker (failure threshold + cooldown), health check failure threshold.
 
 ```env
 SERVER_ADDRESS=:8080
@@ -121,787 +42,196 @@ CIRCUIT_BREAKER_COOLDOWN=10s
 HEALTH_CHECK_FAILURE_THRESHOLD=3
 ```
 
-### Files Updated
+## 2. Graceful Shutdown
 
-- `backend/internal/config/config.go`
-- `backend/internal/config/config_test.go`
-- `backend/cmd/server/main.go`
+The server now uses `http.Server` with `Shutdown(ctx)` — listens for `SIGINT`/`SIGTERM`, stops accepting new requests, drains in-flight requests, and exits within the configured shutdown timeout.
 
----
+## 3. Standardized Error Responses (`backend/internal/apiresponse/`)
 
-## 2. Graceful Shutdown Handling
-
-Graceful shutdown support was added so the backend gateway can stop safely when receiving termination signals.
-
-### What Was Implemented
-
-The backend now:
-
-- Listens for `SIGINT`
-- Listens for `SIGTERM`
-- Stops accepting new requests during shutdown
-- Allows in-flight requests to complete
-- Uses a configurable shutdown timeout
-- Logs shutdown activity clearly
-
-### Why This Was Needed
-
-Previously, the backend used direct `http.ListenAndServe`, which does not provide controlled shutdown behavior. In production-style systems, servers should avoid terminating suddenly while handling active requests.
-
-### Implementation Detail
-
-The server now uses:
-
-```go
-http.Server
-```
-
-and shuts down using:
-
-```go
-server.Shutdown(ctx)
-```
-
-### Files Updated
-
-- `backend/cmd/server/main.go`
-- `backend/internal/config/config.go`
-- `backend/internal/config/config_test.go`
-
----
-
-## 3. Standardized API Error Responses
-
-A reusable API response package was added so backend errors return a consistent JSON format.
-
-### What Was Implemented
-
-A new package was created:
-
-```text
-backend/internal/apiresponse/
-```
-
-### Standard Error Format
+All gateway errors now return the same JSON shape:
 
 ```json
-{
-  "error": "unknown_route",
-  "message": "route must be /orders or /analytics",
-  "code": 400,
-  "requestId": "abc123"
-}
+{ "error": "unknown_route", "message": "route must be /orders or /analytics", "code": 400, "requestId": "abc123" }
 ```
 
-### Applied To
+Applied to: invalid JSON, unknown route, method not allowed, no healthy instances, forwarding failure, rate limit exceeded.
 
-Standardized error responses were applied to:
+## 4. Metrics Endpoint (`GET /api/v1/metrics`)
 
-- Invalid JSON request body
-- Unknown route
-- Method not allowed
-- No healthy service instances
-- Backend forwarding failure
-- Rate limit exceeded
+Dedicated endpoint exposing gateway-level and service/instance-level metrics: uptime, request/error/rate-limit counts, active simulations, per-service request counts, per-instance request/failure counts, health, and circuit state.
 
-### Why This Was Needed
+## 5. Circuit Breaker
 
-Before this update, different handlers returned error responses in slightly different formats. This made frontend handling and debugging less consistent.
+Each instance tracks `circuitState` (`closed` / `open` / `half-open`), consecutive failures, and the timestamp the circuit opened.
 
-### Files Updated
-
-- `backend/internal/apiresponse/error.go`
-- `backend/internal/apiresponse/error_test.go`
-- `backend/cmd/server/main.go`
-
----
-
-## 4. Dedicated Metrics API Endpoint
-
-A new metrics endpoint was added to expose gateway, service, and instance-level metrics in a clean structure.
-
-### New Endpoint
-
-```http
-GET /api/v1/metrics
+```text
+failures ≥ threshold      → circuit opens (instance skipped during routing)
+cooldown elapsed          → circuit becomes half-open (one trial request allowed)
+trial succeeds            → circuit closes, failure count resets
 ```
 
-### What It Returns
+Prevents the gateway from hammering an unstable instance.
 
-The endpoint returns:
+## 6. Improved Health Checks
 
-- Gateway-level metrics
-- Service-level metrics
-- Instance-level metrics
-- Request counts
-- Failure counts
-- Rate limit counts
-- Active request counts
-- Health information
-- Circuit breaker state
+Health checks now require N consecutive failures (configurable) before an instance is marked unhealthy. Each instance also tracks `lastHealthLatencyMs`. A single transient failure no longer evicts a healthy instance from routing.
 
-### Example Response Structure
+## 7. Structured JSON Logging (`backend/internal/logger/`)
+
+Plain text logs replaced with structured JSON. Fields: `timestamp`, `level`, `message`, `requestId`, `method`, `path`, `status`, `latencyMs`, `service`, `instance`, `targetUrl`, `retryAttempt`, `error`.
 
 ```json
-{
-  "gateway": {
-    "uptimeSec": 120,
-    "requestsTotal": 20,
-    "errorsTotal": 2,
-    "rateLimitedTotal": 1,
-    "activeSimulations": 0,
-    "serviceRequests": {},
-    "instanceStatistics": {}
-  },
-  "services": {
-    "orders": {
-      "requests": 10,
-      "instances": []
-    },
-    "analytics": {
-      "requests": 5,
-      "instances": []
-    }
-  }
-}
+{ "level": "info", "message": "request_routing_succeeded", "timestamp": "2026-04-29T18:30:00Z", "requestId": "abc123", "service": "orders", "instance": "orders-service-1", "targetUrl": "http://localhost:9001" }
 ```
-
-### Why This Was Needed
-
-Previously, metrics were partially available through the status endpoint and internal structures. A dedicated metrics endpoint makes observability clearer and easier to demonstrate.
-
-### Files Updated
-
-- `backend/internal/metrics/metrics.go`
-- `backend/internal/metrics/metrics_test.go`
-- `backend/cmd/server/main.go`
-
----
-
-## 5. Circuit Breaker Pattern
-
-A circuit breaker was added to prevent the gateway from repeatedly sending traffic to failing service instances.
-
-### What Was Implemented
-
-Each service instance now tracks:
-
-- Circuit state
-- Consecutive failures
-- Circuit opened timestamp
-
-### Supported Circuit States
-
-- `closed`
-- `open`
-- `half-open`
-
-### Circuit Breaker Flow
-
-```text
-Request succeeds
-→ circuit remains closed
-
-Request fails repeatedly
-→ consecutive failure count increases
-
-Failure threshold reached
-→ circuit opens
-
-Circuit open
-→ instance is skipped during routing
-
-Cooldown expires
-→ circuit becomes half-open
-
-Half-open request succeeds
-→ circuit closes and failures reset
-```
-
-### Why This Was Needed
-
-Retry logic alone is not enough. Without a circuit breaker, the gateway may keep attempting requests to unstable service instances. The circuit breaker improves fault tolerance by temporarily removing bad instances from routing.
-
-### Files Updated
-
-- `backend/internal/registry/registry.go`
-- `backend/internal/registry/registry_test.go`
-- `backend/internal/proxy/forwarder.go`
-- `backend/internal/proxy/forwarder_test.go`
-- `backend/internal/config/config.go`
-- `backend/internal/config/config_test.go`
-- `backend/cmd/server/main.go`
-
----
-
-## 6. Improved Health Check Logic
-
-Health checks were improved so one failed health check does not immediately mark a service instance unhealthy.
-
-### What Was Implemented
-
-Each service instance now tracks:
-
-- Consecutive health check failures
-- Last health check latency in milliseconds
-
-### Behavior
-
-```text
-1 failed health check
-→ instance stays healthy
-
-3 failed health checks
-→ instance becomes unhealthy
-
-successful health check
-→ failure count resets
-→ instance becomes healthy again
-```
-
-### Why This Was Needed
-
-A single temporary network issue should not immediately remove a service instance from routing. This makes health detection more stable and realistic.
-
-### Files Updated
-
-- `backend/internal/registry/registry.go`
-- `backend/internal/registry/registry_test.go`
-- `backend/internal/metrics/metrics.go`
-- `backend/internal/config/config.go`
-- `backend/internal/config/config_test.go`
-- `backend/cmd/server/main.go`
-
----
-
-## 7. Structured JSON Logging
-
-Plain text logs were replaced with structured JSON logs.
-
-### What Was Implemented
-
-A new logger package was added:
-
-```text
-backend/internal/logger/
-```
-
-Logs now include fields such as:
-
-- Timestamp
-- Level
-- Message
-- Request ID
-- Method
-- Path
-- Status
-- Latency in milliseconds
-- Service
-- Instance
-- Target URL
-- Retry attempt
-- Error
-
-### Example Log
-
-```json
-{
-  "level": "info",
-  "message": "request_routing_succeeded",
-  "timestamp": "2026-04-29T18:30:00Z",
-  "requestId": "abc123",
-  "route": "/orders",
-  "service": "orders",
-  "instance": "orders-service-1",
-  "targetUrl": "http://localhost:9001"
-}
-```
-
-### Applied To
-
-Structured logging was added for:
-
-- HTTP request completion
-- Request routing
-- Proxy forwarding attempts
-- Retry failures
-- Health checks
-- Rate limiting
-- Invalid JSON
-- Unknown routes
-- Server startup
-- Server shutdown
-
-### Why This Was Needed
-
-Structured logs are easier to search, parse, and debug. This makes the gateway closer to a production backend system.
-
-### Files Updated
-
-- `backend/internal/logger/logger.go`
-- `backend/internal/middleware/middleware.go`
-- `backend/internal/proxy/forwarder.go`
-- `backend/cmd/server/main.go`
-
----
 
 ## 8. Backend Integration Tests
 
-Backend integration tests were added to verify that the gateway components work together end-to-end.
-
-### What Was Implemented
-
-The server setup was refactored to expose a reusable handler:
-
-```go
-buildGatewayHandler(...)
-```
-
-This allows tests to create an in-memory gateway using `httptest`.
-
-### Integration Tests Added
-
-The new integration tests cover:
-
-- Successful request forwarding through the gateway
-- Retry behavior after a failed service instance
-- Unknown route error handling
-- No healthy instances error handling
-- Metrics endpoint response structure
-
-### Why This Was Needed
-
-Unit tests verify individual packages, but integration tests verify that routing, registry, load balancing, proxying, metrics, and error handling work together.
-
-### Files Updated
-
-- `backend/cmd/server/main.go`
-- `backend/cmd/server/main_test.go`
+Refactored `main.go` to expose `buildGatewayHandler(...)` so tests can spin up an in-memory gateway with `httptest`. Tests cover end-to-end forwarding, retry-after-failure, unknown routes, no-healthy-instances, and the metrics endpoint shape.
 
 ---
 
-# Backend API Documentation
+# Frontend Work
 
-## 1. Health Check Endpoint
+All frontend work extends the existing React dashboard at `frontend/src/pages/Dashboard.jsx` and the helpers in `frontend/src/utils/metrics.js`.
 
-```http
-GET /health
-```
+## F1. Services Status Panel + Circuit Breaker Badges
 
-Checks whether the gateway server is running.
+Polls `/api/v1/services` and renders each service with its instances. Each row shows a health dot (green/red), instance name, a circuit breaker badge (`closed` / `open` / `half-open` / `—`), active request count, and failure count. `breakerBadge()` and `normalizeBreakerState()` map backend strings to colored badges. This makes the new circuit breaker state from backend item #5 visible at a glance.
 
-### Example Response
+## F2. Chaos Controls Panel
 
-```json
-{
-  "status": "ok",
-  "service": "edgeforge-gateway"
-}
-```
+Lists every backend instance in a table with its current injected mode (`off` / `fail` / `latency`). Selecting a mode posts to `/api/v1/admin/inject` so the user can deliberately break an instance and watch the circuit breaker, retries, and error-rate alert react in real time. Helpers: `getInstancesFromServices()`, `buildChaosPayload()`, `CHAOS_MODES`.
 
----
+## F3. Request Trace Viewer
 
-## 2. Status Endpoint
+Each row in the request log opens a detail modal. The modal now renders a trace timeline built from `response.trace` — one row per attempt with attempt number, instance, outcome pill (`success` / `fail`), latency, and any error message. `parseTrace()` normalizes the backend trace payload. Makes retries and circuit-breaker skips visible per request.
 
-```http
-GET /api/v1/status
-```
+## F4. Configurable Error-Rate Alert Banner
 
-Returns gateway-level status and metrics.
+A red banner appears at the top of the dashboard when any service's error rate over the last N requests exceeds the configured threshold. Threshold (`errorRateAlertPct`), window size, and on/off toggle live in the Settings panel and persist via `localStorage`. Banner is dismissible per service. Helpers: `computeServiceErrorRates()`, `findAlertingServices()`. Requires at least 3 requests in the window before alerting to avoid noise.
 
-### Example Response
+## F5. Dark Mode Toggle
 
-```json
-{
-  "uptimeSec": 50,
-  "requestsTotal": 10,
-  "errorsTotal": 1,
-  "rateLimitedTotal": 0,
-  "activeSimulations": 0,
-  "serviceRequests": {
-    "orders": 5
-  },
-  "instanceStatistics": {
-    "orders": {
-      "orders-service-1": {
-        "requests": 3,
-        "failures": 1
-      }
-    }
-  }
-}
-```
+Theme selector in Settings: `system` / `light` / `dark`. `applyTheme()` sets `data-theme` on `<html>`; CSS in `index.css` defines variables (`--bg-page`, `--bg-card`, `--text-primary`, etc.) for both themes. The whole dashboard reads from these variables so all panels — cards, tables, modals, charts — respect the theme. Choice persists in `localStorage`; `system` follows `prefers-color-scheme` and updates live.
 
 ---
 
-## 3. Request Routing Endpoint
+# API Reference
 
-```http
-POST /api/v1/request
-```
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/health` | GET | Gateway liveness |
+| `/api/v1/status` | GET | Gateway-level counters |
+| `/api/v1/services` | GET | Service registry, health, circuit state, per-instance metrics |
+| `/api/v1/metrics` | GET | Combined gateway + service/instance metrics |
+| `/api/v1/request` | POST | Route a request to `/orders` or `/analytics` |
+| `/api/v1/admin/inject` | POST | Inject chaos mode (`off` / `fail` / `latency`) on an instance |
 
-Accepts a client request and forwards it to the correct backend microservice.
-
-### Supported Routes
-
-- `/orders`
-- `/analytics`
-
-### Example Request Body
+### `POST /api/v1/request`
 
 ```json
-{
-  "route": "/orders",
-  "payload": {
-    "orderId": "123",
-    "amount": 250
-  }
-}
+{ "route": "/orders", "payload": { "orderId": "123", "amount": 250 } }
 ```
 
-### Example Success Response
+Success:
 
 ```json
-{
-  "requestId": "abc123",
-  "route": "/orders",
-  "service": "orders",
-  "routedTo": "orders-service-1",
-  "targetUrl": "http://localhost:9001",
-  "status": "success",
-  "backendResponse": {
-    "message": "orders handled"
-  }
-}
+{ "requestId": "abc123", "route": "/orders", "service": "orders", "routedTo": "orders-service-1", "targetUrl": "http://localhost:9001", "status": "success", "backendResponse": { "message": "orders handled" } }
 ```
 
-### Example Error Response
-
-```json
-{
-  "error": "unknown_route",
-  "message": "route must be /orders or /analytics",
-  "code": 400,
-  "requestId": "abc123"
-}
-```
-
----
-
-## 4. Service Discovery Endpoint
-
-```http
-GET /api/v1/services
-```
-
-Returns service registry information, health status, active requests, circuit breaker state, and instance-level metrics.
-
-### Example Response
+### `GET /api/v1/services` (excerpt)
 
 ```json
 {
   "orders": {
     "requests": 10,
-    "instances": [
-      {
-        "name": "orders-service-1",
-        "url": "http://localhost:9001",
-        "healthy": true,
-        "activeRequests": 0,
-        "requests": 5,
-        "failures": 1,
-        "circuitState": "closed",
-        "consecutiveFailures": 0,
-        "healthCheckFailures": 0,
-        "lastHealthLatencyMs": 4
-      }
-    ]
+    "instances": [{
+      "name": "orders-service-1",
+      "url": "http://localhost:9001",
+      "healthy": true,
+      "activeRequests": 0,
+      "requests": 5,
+      "failures": 1,
+      "circuitState": "closed",
+      "consecutiveFailures": 0,
+      "healthCheckFailures": 0,
+      "lastHealthLatencyMs": 4
+    }]
   }
 }
 ```
 
 ---
 
-## 5. Metrics Endpoint
+# Tests
 
-```http
-GET /api/v1/metrics
-```
+## Backend (`go test ./...`)
 
-Returns a dedicated metrics response containing gateway-level and service-level observability data.
+| Package | Coverage |
+|---|---|
+| `config` | defaults, env override, fallback on invalid values |
+| `apiresponse` | JSON content-type/status, standardized error shape |
+| `ratelimit` | within-limit, blocked over limit, reset after window |
+| `loadbalancer` | round-robin alternation + per-service index, least-loaded selection + ties + single instance |
+| `registry` | health filtering, active request counters, circuit transitions (open after threshold, half-open after cooldown, close on success), health check failure threshold |
+| `proxy` | first-instance success, retry after failure, all-fail, active request cleanup, circuit opens after repeated failure |
+| `metrics` | service/instance/global counters, snapshot includes registry state, API snapshot shape |
+| `cmd/server` (integration) | end-to-end forward, retry after failed instance, unknown route, no healthy instances, metrics endpoint shape |
 
-### Example Response
+## Frontend
 
-```json
-{
-  "gateway": {
-    "uptimeSec": 120,
-    "requestsTotal": 20,
-    "errorsTotal": 2,
-    "rateLimitedTotal": 1,
-    "activeSimulations": 0,
-    "serviceRequests": {
-      "orders": 10
-    },
-    "instanceStatistics": {
-      "orders": {
-        "orders-service-1": {
-          "requests": 6,
-          "failures": 1
-        }
-      }
-    }
-  },
-  "services": {
-    "orders": {
-      "requests": 10,
-      "instances": [
-        {
-          "name": "orders-service-1",
-          "url": "http://localhost:9001",
-          "healthy": true,
-          "activeRequests": 0,
-          "requests": 6,
-          "failures": 1,
-          "circuitState": "closed",
-          "consecutiveFailures": 0,
-          "healthCheckFailures": 0,
-          "lastHealthLatencyMs": 4
-        }
-      ]
-    }
-  }
-}
-```
+- **Vitest** (`frontend/src/utils/metrics.test.js`, `frontend/src/pages/Dashboard.test.jsx`): covers `parseServices`, `normalizeBreakerState`, `breakerBadge`, `parseTrace`, `computeServiceErrorRates`, `findAlertingServices`, `getInstancesFromServices`, `buildChaosPayload`, theme load/save/apply, and Dashboard panel rendering for circuit badges, trace timeline, alert banner, dark mode, and chaos table.
+- **Cypress** (`frontend/cypress/e2e/dashboard.cy.js`): dashboard loads, send test request flow, dark mode toggles and persists across reload, Services Status panel renders instance rows, alert threshold control is exposed in settings.
 
 ---
 
-# Backend Tests
+# Running
 
-## Config Tests
-
-- `TestLoadReturnsDefaultConfigValues`
-- `TestLoadReadsEnvironmentVariables`
-- `TestLoadFallsBackWhenEnvironmentVariablesAreInvalid`
-
-These tests verify config defaults, environment values, and fallback behavior.
-
-## Rate Limiter Tests
-
-- `TestAllowWithinLimit`
-- `TestBlockWhenLimitExceeded`
-- `TestAllowAfterWindowReset`
-
-These tests verify that the rate limiter allows requests within the limit, blocks requests after the limit, and resets after the configured window.
-
-## Load Balancer Tests
-
-- `TestRoundRobinSelectAlternatesInstances`
-- `TestRoundRobinTracksIndexPerService`
-- `TestLeastLoadedSelectChoosesLowestActiveRequests`
-- `TestLeastLoadedSelectReturnsFirstInstanceOnTie`
-- `TestLeastLoadedSelectWorksWithSingleInstance`
-
-These tests verify round-robin and least-loaded load balancing behavior.
-
-## Registry Tests
-
-- `TestGetInstancesReturnsServiceInstances`
-- `TestGetHealthyInstancesFiltersUnhealthyOnes`
-- `TestGetHealthyInstancesReturnsErrorWhenNoneHealthy`
-- `TestSetInstanceHealthUpdatesHealthStatus`
-- `TestIncrementActiveRequests`
-- `TestDecrementActiveRequests`
-- `TestDecrementActiveRequestsDoesNotGoNegative`
-- `TestIncrementActiveRequestsUnknownService`
-- `TestIncrementActiveRequestsUnknownInstance`
-- `TestRecordInstanceFailureOpensCircuitAfterThreshold`
-- `TestRecordInstanceSuccessClosesCircuitAndResetsFailures`
-- `TestGetAvailableInstancesSkipsOpenCircuit`
-- `TestGetAvailableInstancesMovesOpenCircuitToHalfOpenAfterCooldown`
-- `TestRecordHealthCheckResultDoesNotMarkUnhealthyBeforeThreshold`
-- `TestRecordHealthCheckResultMarksUnhealthyAtThreshold`
-- `TestRecordHealthCheckResultSuccessRestoresHealth`
-
-These tests verify service registry behavior, health status updates, active request tracking, circuit breaker transitions, and improved health check logic.
-
-## Proxy Tests
-
-- `TestForwardWithRetrySucceedsOnFirstHealthyInstance`
-- `TestForwardWithRetryRetriesAfterFailure`
-- `TestForwardWithRetryFailsWhenAllAttemptsFail`
-- `TestForwardWithRetryDecrementsActiveRequestsAfterFailure`
-- `TestForwardWithRetryOpensCircuitAfterRepeatedFailure`
-
-These tests verify request forwarding, retry behavior, failure handling, active request cleanup, and circuit breaker opening.
-
-## Metrics Tests
-
-- `TestIncServiceRequests`
-- `TestIncInstanceRequests`
-- `TestIncInstanceFailures`
-- `TestSnapshotIncludesServiceAndInstanceMetrics`
-- `TestServiceSnapshotIncludesRegistryState`
-- `TestAPISnapshotIncludesGatewayAndServiceMetrics`
-
-These tests verify global, service-level, instance-level, and API metrics snapshots.
-
-## API Response Tests
-
-- `TestWriteJSONWritesContentTypeAndStatus`
-- `TestWriteErrorWritesStandardErrorResponse`
-
-These tests verify JSON response writing and standardized error response formatting.
-
-## Backend Integration Tests
-
-- `TestGatewayIntegrationForwardsRequestToBackendService`
-- `TestGatewayIntegrationRetriesAfterFailedInstance`
-- `TestGatewayIntegrationReturnsErrorForUnknownRoute`
-- `TestGatewayIntegrationReturnsErrorWhenNoHealthyInstancesExist`
-- `TestGatewayIntegrationMetricsEndpointReturnsGatewayAndServiceMetrics`
-
-These tests verify full gateway behavior using `httptest`.
-
----
-
-# Frontend Testing Support
-
-Frontend work was handled separately by the frontend team member.
-
-The backend changes support the frontend by providing:
-
-- Consistent API error responses
-- Service discovery data
-- Metrics endpoint data
-- Gateway status data
-- Request routing responses
-
-Frontend tests should cover:
-
-- Dashboard rendering
-- Request form behavior
-- Service status display
-- Metrics display
-- Error response handling
-- Cypress test for submitting a request through the UI
-- Cypress test for viewing service and metrics data
-
----
-
-# How to Run the Backend
-
-From the repository root:
+**Backend** (from `backend/`):
 
 ```bash
-cd backend
-go run cmd/server/main.go
+go run cmd/server/main.go        # http://localhost:8080
+go test ./...                    # all backend tests
 ```
 
-The gateway runs on:
-
-```text
-http://localhost:8080
-```
-
----
-
-# How to Run Backend Tests
-
-From the backend directory:
+**Frontend** (from `frontend/`):
 
 ```bash
-go test ./...
+npm run dev                      # http://localhost:5173
+npm test                         # vitest
+env -u ELECTRON_RUN_AS_NODE npx cypress run   # cypress
 ```
-
-This command runs all backend unit and integration tests.
 
 ---
 
 # Demo Commands
 
-## Health Check
-
 ```bash
 curl http://localhost:8080/health
-```
-
-## Status
-
-```bash
 curl http://localhost:8080/api/v1/status
-```
-
-## Services
-
-```bash
 curl http://localhost:8080/api/v1/services
-```
-
-## Metrics
-
-```bash
 curl http://localhost:8080/api/v1/metrics
-```
 
-## Send Gateway Request to Orders Service
-
-```bash
 curl -X POST http://localhost:8080/api/v1/request \
   -H "Content-Type: application/json" \
-  -d '{
-    "route": "/orders",
-    "payload": {
-      "orderId": "123",
-      "amount": 250
-    }
-  }'
-```
+  -d '{"route":"/orders","payload":{"orderId":"123","amount":250}}'
 
-## Send Gateway Request to Analytics Service
-
-```bash
+# Trigger an unknown-route error (standardized error response)
 curl -X POST http://localhost:8080/api/v1/request \
   -H "Content-Type: application/json" \
-  -d '{
-    "route": "/analytics",
-    "payload": {
-      "event": "page_view",
-      "userId": "user-123"
-    }
-  }'
-```
-
-## Invalid Route Example
-
-```bash
-curl -X POST http://localhost:8080/api/v1/request \
-  -H "Content-Type: application/json" \
-  -d '{
-    "route": "/payments",
-    "payload": {
-      "paymentId": "pay-123"
-    }
-  }'
+  -d '{"route":"/payments","payload":{}}'
 ```
 
 ---
 
-# Sprint 4 Backend Issues Completed
+# Sprint 4 Issues Completed
 
-1. Add config management for backend gateway settings
-2. Implement graceful shutdown for backend server
-3. Standardize backend API error responses
-4. Add dedicated backend metrics API endpoint
-5. Add circuit breaker for failed service instances
-6. Improve service health check logic with failure thresholds
-7. Add structured JSON logging for backend requests
-8. Add backend integration tests for gateway request flow
-9. Update backend API documentation
-10. Create `Sprint4.md` documentation
+**Backend**: config management, graceful shutdown, standardized error responses, metrics endpoint, circuit breaker, improved health checks, structured JSON logging, integration tests, API docs.
+
+**Frontend**: #F1 services status + circuit breaker badges, #F2 chaos controls panel, #F3 request trace viewer, #F4 error-rate alert banner, #F5 dark mode toggle.
 
 ---
 
-# Final Sprint 4 Outcome
+# Outcome
 
-Sprint 4 made EdgeForge more complete and production-like. The backend now has stronger resilience, cleaner configuration, better error handling, deeper observability, safer shutdown behavior, improved health monitoring, circuit breaker fault tolerance, structured logs, and integration tests that verify the gateway flow end-to-end.
+The backend is now resilient (circuit breaker + retries + threshold-based health), observable (structured logs + dedicated metrics endpoint), and operationally safe (graceful shutdown + standardized errors + integration-tested). The frontend exposes every new backend signal directly in the dashboard — circuit state, request traces, error-rate alerts — and adds chaos injection so the resilience features can be demonstrated live, plus a dark mode for the demo.

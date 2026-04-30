@@ -27,6 +27,11 @@ type RequestBody struct {
 	Payload map[string]any `json:"payload"`
 }
 
+type InjectRequest struct {
+	Instance string `json:"instance"`
+	Mode     string `json:"mode"`
+}
+
 type GatewayResponse struct {
 	RequestID       string         `json:"requestId"`
 	Route           string         `json:"route"`
@@ -191,6 +196,82 @@ func buildGatewayHandler(
 		}
 
 		apiresponse.WriteJSON(w, http.StatusOK, m.ServiceSnapshot(serviceRegistry))
+	})
+
+	// Chaos injection endpoint
+	mux.HandleFunc("/api/v1/admin/inject", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusMethodNotAllowed,
+				"method_not_allowed",
+				"this endpoint only supports POST requests",
+			)
+			return
+		}
+
+		var body InjectRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"invalid_json",
+				"request body must be valid JSON",
+			)
+			return
+		}
+
+		if body.Instance == "" {
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"missing_instance",
+				"instance name is required",
+			)
+			return
+		}
+
+		if !registry.IsValidInjectMode(body.Mode) {
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusBadRequest,
+				"invalid_mode",
+				"mode must be one of: off, fail, latency",
+			)
+			return
+		}
+
+		if err := serviceRegistry.SetInjectedMode(body.Instance, body.Mode); err != nil {
+			logger.Error("chaos_inject_failed", logger.Fields{
+				"instance": body.Instance,
+				"mode":     body.Mode,
+				"error":    err.Error(),
+			})
+
+			apiresponse.WriteError(
+				w,
+				r,
+				http.StatusNotFound,
+				"instance_not_found",
+				err.Error(),
+			)
+			return
+		}
+
+		logger.Info("chaos_inject_applied", logger.Fields{
+			"instance": body.Instance,
+			"mode":     body.Mode,
+		})
+
+		apiresponse.WriteJSON(w, http.StatusOK, map[string]any{
+			"instance": body.Instance,
+			"mode":     body.Mode,
+			"status":   "applied",
+		})
 	})
 
 	// Request endpoint

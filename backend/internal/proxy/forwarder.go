@@ -151,11 +151,29 @@ func ForwardWithRetry(
 	return nil, err
 }
 
+const injectedLatency = 750 * time.Millisecond
+
 func forwardToInstance(
 	client *http.Client,
 	instance registry.ServiceInstance,
 	requestBody any,
 ) (map[string]any, error) {
+	switch instance.InjectedMode {
+	case registry.InjectFail:
+		logger.Info("proxy_chaos_injected_fail", logger.Fields{
+			"instance":  instance.Name,
+			"targetUrl": instance.URL,
+		})
+		return nil, fmt.Errorf("chaos_injected_failure")
+	case registry.InjectLatency:
+		logger.Info("proxy_chaos_injected_latency", logger.Fields{
+			"instance":  instance.Name,
+			"targetUrl": instance.URL,
+			"sleepMs":   injectedLatency.Milliseconds(),
+		})
+		time.Sleep(injectedLatency)
+	}
+
 	requestBytes, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed_to_encode_forward_request: %w", err)

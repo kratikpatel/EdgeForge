@@ -152,6 +152,11 @@ func (m *Metrics) ServiceSnapshot(serviceRegistry *registry.ServiceRegistry) map
 				stats = serviceStats[instance.Name]
 			}
 
+			injectedMode := instance.InjectedMode
+			if injectedMode == "" {
+				injectedMode = registry.InjectOff
+			}
+
 			serviceData["instances"] = append(serviceData["instances"].([]map[string]any), map[string]any{
 				"name":                instance.Name,
 				"url":                 instance.URL,
@@ -163,6 +168,7 @@ func (m *Metrics) ServiceSnapshot(serviceRegistry *registry.ServiceRegistry) map
 				"consecutiveFailures": instance.ConsecutiveFailures,
 				"healthCheckFailures": instance.HealthCheckFailures,
 				"lastHealthLatencyMs": instance.LastHealthLatencyMs,
+				"injectedMode":        injectedMode,
 			})
 		}
 
