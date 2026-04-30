@@ -14,6 +14,7 @@ import {
   applyTheme,
   computeServiceErrorRates,
   findAlertingServices,
+  parseTrace,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -485,4 +486,78 @@ describe("findAlertingServices", () => {
     });
     expect(result.map((r) => r.service)).toEqual(["b", "a"]);
   });
+});
+
+describe("parseTrace", () => {
+  it("returns empty array when there is no trace", () => {
+    expect(parseTrace(null)).toEqual([]);
+    expect(parseTrace({})).toEqual([]);
+    expect(parseTrace({ response: {} })).toEqual([]);
+    expect(parseTrace({ response: { trace: null } })).toEqual([]);
+    expect(parseTrace({ response: { trace: [] } })).toEqual([]);
+  });
+
+  it("normalizes a single-attempt success trace", () => {
+    const entry = {
+      response: {
+        trace: [
+          { attempt: 1, instance: "orders-service-1", status: "success", latencyMs: 35 },
+        ],
+      },
+    };
+    expect(parseTrace(entry)).toEqual([
+      { attempt: 1, instance: "orders-service-1", outcome: "success", latencyMs: 35, error: null },
+    ]);
+  });
+
+  it("normalizes a retry trace with a failed first attempt", () => {
+    const entry = {
+      response: {
+        trace: [
+          { attempt: 1, instance: "orders-service-1", status: "fail", latencyMs: 120, error: "connection refused" },
+          { attempt: 2, instance: "orders-service-2", status: "success", latencyMs: 30 },
+        ],
+      },
+    };
+    const result = parseTrace(entry);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ attempt: 1, outcome: "fail", error: "connection refused" });
+    expect(result[1]).toMatchObject({ attempt: 2, outcome: "success", error: null });
+  });
+
+  it("backfills missing attempt numbers and latency", () => {
+    const entry = {
+      response: {
+        trace: [
+          { instance: "a", status: "success" },
+          { instance: "b", status: "fail", latencyMs: "bad" },
+        ],
+      },
+    };
+    const result = parseTrace(entry);
+    expect(result[0].attempt).toBe(1);
+    expect(result[1].attempt).toBe(2);
+    expect(result[0].latencyMs).toBe(null);
+    expect(result[1].latencyMs).toBe(null);
+  });
+
+  it("normalizes alternate status keywords (ok/error)", () => {
+    const entry = {
+      response: {
+        trace: [
+          { attempt: 1, instance: "a", status: "ok" },
+          { attempt: 2, instance: "b", status: "ERROR" },
+        ],
+      },
+    };
+    const result = parseTrace(entry);
+    expect(result[0].outcome).toBe("success");
+    expect(result[1].outcome).toBe("fail");
+  });
+
+  it("accepts a trace at the top level (not nested under response)", () => {
+    const entry = { trace: [{ attempt: 1, instance: "a", status: "success" }] };
+    expect(parseTrace(entry)).toHaveLength(1);
+  });
+
 });

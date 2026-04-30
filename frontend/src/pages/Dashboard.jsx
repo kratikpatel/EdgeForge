@@ -17,6 +17,7 @@ import {
   saveSettings,
   applyTheme,
   findAlertingServices,
+  parseTrace,
 } from "../utils/metrics";
 
 function Card({ title, children }) {
@@ -1136,6 +1137,79 @@ export default function Dashboard() {
             >
               Copy Request ID
             </button>
+            {(() => {
+              const trace = parseTrace(selectedRequest);
+              if (trace.length === 0) return null;
+              return (
+                <div aria-label="Request trace timeline" style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-strong)", marginBottom: 8 }}>
+                    Trace ({trace.length} {trace.length === 1 ? "attempt" : "attempts"})
+                  </div>
+                  <ol style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {trace.map((step, idx) => {
+                      const isSuccess = step.outcome === "success";
+                      const isFail = step.outcome === "fail";
+                      const pillBg = isSuccess ? "#ecfdf5" : isFail ? "#fef2f2" : "#fffbeb";
+                      const pillColor = isSuccess ? "#065f46" : isFail ? "#b91c1c" : "#92400e";
+                      return (
+                        <li
+                          key={idx}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 10px",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            fontSize: 12,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: 999,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "var(--bg-muted)",
+                              color: "var(--text-strong)",
+                              fontWeight: 700,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {step.attempt}
+                          </span>
+                          <code style={{ flex: "0 0 auto" }}>{step.instance}</code>
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 600,
+                              background: pillBg,
+                              color: pillColor,
+                            }}
+                          >
+                            {step.outcome}
+                          </span>
+                          {step.latencyMs !== null && (
+                            <span style={{ color: "var(--text-secondary)" }}>
+                              {step.latencyMs}ms
+                            </span>
+                          )}
+                          {step.error && (
+                            <span style={{ color: "#b91c1c", marginLeft: "auto", fontSize: 11 }}>
+                              {step.error}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-strong)", marginBottom: 6 }}>Response</div>
             <pre
               style={{
