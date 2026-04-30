@@ -18,6 +18,8 @@ import {
   applyTheme,
   findAlertingServices,
   parseTrace,
+  parseServices,
+  breakerBadge,
 } from "../utils/metrics";
 
 function Card({ title, children }) {
@@ -187,28 +189,32 @@ export default function Dashboard() {
   const [requestLog, setRequestLog] = useState([]);
   const [logFilters, setLogFilters] = useState({ service: "all", status: "all", search: "" });
   const [selectedRequest, setSelectedRequest] = useState(null);
-  const [knownInstances, setKnownInstances] = useState([]);
+  const [services, setServices] = useState([]);
+  const knownInstances = services.flatMap((svc) => svc.instances.map((i) => i.name));
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId = null;
+
     async function fetchServices() {
       try {
         const res = await fetch(`${API_BASE}/api/v1/services`);
         const data = await res.json();
-        if (cancelled || !data || typeof data !== "object") return;
-        const names = Object.values(data).flatMap((svc) =>
-          (svc?.instances || []).map((inst) => inst?.name).filter(Boolean)
-        );
-        setKnownInstances(Array.from(new Set(names)));
+        if (cancelled) return;
+        setServices(parseServices(data));
       } catch {
         /* ignore */
       }
     }
+
     fetchServices();
+    intervalId = setInterval(fetchServices, settings?.pollInterval || 1500);
+
     return () => {
       cancelled = true;
+      if (intervalId) clearInterval(intervalId);
     };
-  }, []);
+  }, [settings?.pollInterval]);
 
   async function sendTestRequest() {
     setSending(true);
@@ -967,6 +973,82 @@ export default function Dashboard() {
                 </>
               );
             })()}
+          </Card>
+
+          {/* Services Status (with circuit breaker state) */}
+          <Card title="Services Status">
+            {services.length === 0 ? (
+              <div style={{ color: "var(--text-secondary)", fontSize: 13, padding: "8px 0" }}>
+                Waiting for backend service registry...
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {services.map((svc) => (
+                  <div key={svc.service}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-strong)", marginBottom: 6 }}>
+                      {svc.service}{" "}
+                      <span style={{ color: "var(--text-secondary)", fontWeight: 400 }}>
+                        — {svc.requests} request{svc.requests === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <ul aria-label={`${svc.service} instances`} style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {svc.instances.map((inst) => {
+                        const badge = breakerBadge(inst.breaker);
+                        return (
+                          <li
+                            key={inst.name}
+                            data-instance-name={inst.name}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              padding: "8px 10px",
+                              border: "1px solid var(--border)",
+                              borderRadius: 8,
+                              fontSize: 12,
+                            }}
+                          >
+                            <span
+                              aria-label={inst.healthy ? "healthy" : "unhealthy"}
+                              title={inst.healthy ? "healthy" : "unhealthy"}
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 999,
+                                background: inst.healthy ? "#22c55e" : "#ef4444",
+                                flexShrink: 0,
+                              }}
+                            />
+                            <code style={{ flex: "1 1 auto" }}>{inst.name}</code>
+                            <span
+                              data-testid={`breaker-${inst.name}`}
+                              aria-label={`circuit breaker ${badge.label}`}
+                              style={{
+                                padding: "2px 8px",
+                                borderRadius: 6,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                background: badge.bg,
+                                color: badge.color,
+                                border: `1px solid ${badge.border}`,
+                              }}
+                            >
+                              {badge.label}
+                            </span>
+                            <span style={{ color: "var(--text-secondary)" }}>
+                              active {inst.activeRequests}
+                            </span>
+                            <span style={{ color: "var(--text-secondary)" }}>
+                              fail {inst.failures}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           {/* Per-Service Metrics */}

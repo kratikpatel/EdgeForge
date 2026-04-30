@@ -40,6 +40,11 @@ describe("EdgeForge Dashboard", () => {
     cy.get("html").should("have.attr", "data-theme", "dark");
   });
 
+  it("renders the Services Status panel with at least one instance row", () => {
+    cy.contains("Services Status").should("be.visible");
+    cy.get('[data-instance-name]').should("have.length.gte", 1);
+  });
+
   it("exposes the alert threshold control in settings", () => {
     cy.window().then((win) => win.localStorage.clear());
     cy.reload();
