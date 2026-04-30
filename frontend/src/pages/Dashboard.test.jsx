@@ -225,4 +225,79 @@ describe("Dashboard", () => {
       expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     });
   });
+
+  it("renders enable-alerts checkbox and threshold input in settings", () => {
+    localStorage.clear();
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    fireEvent.click(screen.getByText("Show Settings"));
+    expect(screen.getByLabelText("Enable error rate alerts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Error rate alert threshold")).toBeInTheDocument();
+  });
+
+  it("does not render the alert banner when there are no errors", () => {
+    localStorage.clear();
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    expect(screen.queryByRole("alert", { name: "Error rate alert" })).not.toBeInTheDocument();
+  });
+
+  it("shows the alert banner when error rate crosses the threshold", async () => {
+    localStorage.clear();
+    let callIdx = 0;
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      if (url.includes("/api/v1/request")) {
+        callIdx++;
+        return Promise.resolve({
+          ok: false, status: 500,
+          json: async () => ({ requestId: `req-${callIdx}`, routedTo: "orders-1" }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: "ok" }) });
+    });
+    render(<Dashboard />);
+    const sendBtn = screen.getByRole("button", { name: "Send Test Request" });
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(sendBtn);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Send Test Request" })).not.toBeDisabled();
+      });
+    }
+    await waitFor(() => {
+      expect(screen.getByRole("alert", { name: "Error rate alert" })).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Error rate above 10%/i)).toBeInTheDocument();
+  });
+
+  it("dismisses the alert banner when Dismiss is clicked", async () => {
+    localStorage.clear();
+    let callIdx = 0;
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      if (url.includes("/api/v1/request")) {
+        callIdx++;
+        return Promise.resolve({
+          ok: false, status: 500,
+          json: async () => ({ requestId: `req-${callIdx}`, routedTo: "orders-1" }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: "ok" }) });
+    });
+    render(<Dashboard />);
+    const sendBtn = screen.getByRole("button", { name: "Send Test Request" });
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(sendBtn);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Send Test Request" })).not.toBeDisabled();
+      });
+    }
+    await waitFor(() => {
+      expect(screen.getByRole("alert", { name: "Error rate alert" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByLabelText("Dismiss alert"));
+    expect(screen.queryByRole("alert", { name: "Error rate alert" })).not.toBeInTheDocument();
+  });
 });

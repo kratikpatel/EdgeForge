@@ -146,6 +146,9 @@ const DEFAULT_SETTINGS = {
   maxLogSize: 100,
   chartWindow: 30,
   theme: "system",
+  enableAlerts: true,
+  errorRateAlertPct: 10,
+  alertWindowSize: 20,
 };
 
 export function loadSettings() {
@@ -183,6 +186,41 @@ export function applyTheme(theme) {
   if (typeof document === "undefined") return;
   const resolved = resolveTheme(theme);
   document.documentElement.setAttribute("data-theme", resolved);
+}
+
+export function computeServiceErrorRates(requestLog, windowSize = 20) {
+  if (!Array.isArray(requestLog) || requestLog.length === 0) return [];
+
+  const slice = requestLog.slice(0, Math.max(1, windowSize));
+  const byService = {};
+  for (const entry of slice) {
+    const service = entry?.routedTo;
+    if (!service || service === "—") continue;
+    if (!byService[service]) byService[service] = { service, total: 0, errors: 0 };
+    const code = Number(entry?.status);
+    byService[service].total += 1;
+    if ((Number.isFinite(code) && code >= 400 && code !== 429) || entry?.status === "error") {
+      byService[service].errors += 1;
+    }
+  }
+
+  return Object.values(byService).map((b) => ({
+    service: b.service,
+    total: b.total,
+    errors: b.errors,
+    errorRatePct: b.total > 0 ? Math.round((b.errors / b.total) * 1000) / 10 : 0,
+  }));
+}
+
+export function findAlertingServices(requestLog, settings) {
+  if (!settings?.enableAlerts) return [];
+  const threshold = Number(settings?.errorRateAlertPct);
+  if (!Number.isFinite(threshold) || threshold <= 0) return [];
+  const windowSize = Number(settings?.alertWindowSize) || 20;
+
+  return computeServiceErrorRates(requestLog, windowSize)
+    .filter((row) => row.total >= 3 && row.errorRatePct >= threshold)
+    .sort((a, b) => b.errorRatePct - a.errorRatePct);
 }
 
 export function formatMetricsEntry(reqs, errs, rl, prevReqs, prevErrs, prevRl) {

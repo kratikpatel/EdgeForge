@@ -16,6 +16,7 @@ import {
   loadSettings,
   saveSettings,
   applyTheme,
+  findAlertingServices,
 } from "../utils/metrics";
 
 function Card({ title, children }) {
@@ -177,6 +178,7 @@ export default function Dashboard() {
     );
   }, [status, settings?.chartWindow]);
 
+  const [dismissedAlerts, setDismissedAlerts] = useState(() => new Set());
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [lastResponse, setLastResponse] = useState(null);
@@ -355,6 +357,67 @@ export default function Dashboard() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
+        {(() => {
+          const alerts = findAlertingServices(requestLog, settings).filter(
+            (a) => !dismissedAlerts.has(a.service)
+          );
+          if (alerts.length === 0) return null;
+          return (
+            <div
+              role="alert"
+              aria-label="Error rate alert"
+              style={{
+                marginBottom: 14,
+                padding: "12px 16px",
+                borderRadius: 10,
+                border: "1px solid #fecaca",
+                background: "#fef2f2",
+                color: "#991b1b",
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <div style={{ fontSize: 13, lineHeight: 1.45 }}>
+                <strong style={{ fontWeight: 700 }}>
+                  Error rate above {settings.errorRateAlertPct}%
+                </strong>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                  {alerts.map((a) => (
+                    <li key={a.service}>
+                      <code style={{ fontSize: 12 }}>{a.service}</code> —{" "}
+                      {a.errorRatePct}% errors over last {a.total} requests
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                aria-label="Dismiss alert"
+                onClick={() =>
+                  setDismissedAlerts((prev) => {
+                    const next = new Set(prev);
+                    alerts.forEach((a) => next.add(a.service));
+                    return next;
+                  })
+                }
+                style={{
+                  border: "1px solid #fecaca",
+                  background: "transparent",
+                  color: "#991b1b",
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          );
+        })()}
         <header style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>EdgeForge Dashboard</h1>
           <p style={{ marginTop: 6, color: "var(--text-secondary)" }}>
@@ -434,6 +497,37 @@ export default function Dashboard() {
                     <option value="light">Light</option>
                     <option value="dark">Dark</option>
                   </select>
+                </label>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    aria-label="Enable error rate alerts"
+                    checked={!!settings.enableAlerts}
+                    onChange={(e) => {
+                      updateSetting("enableAlerts", e.target.checked);
+                      if (e.target.checked) setDismissedAlerts(new Set());
+                    }}
+                  />
+                  Enable alerts
+                </label>
+                <label>
+                  Alert threshold:{" "}
+                  <input
+                    type="number"
+                    aria-label="Error rate alert threshold"
+                    min={1}
+                    max={100}
+                    value={settings.errorRateAlertPct}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 1 && n <= 100) {
+                        updateSetting("errorRateAlertPct", n);
+                        setDismissedAlerts(new Set());
+                      }
+                    }}
+                    style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
+                  />
+                  %
                 </label>
               </div>
             )}
