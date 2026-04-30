@@ -140,10 +140,12 @@ export function toCsv(requestLog) {
 }
 
 const SETTINGS_KEY = "edgeforge:settings";
+const VALID_THEMES = ["system", "light", "dark"];
 const DEFAULT_SETTINGS = {
   pollInterval: 1500,
   maxLogSize: 100,
   chartWindow: 30,
+  theme: "system",
 };
 
 export function loadSettings() {
@@ -151,7 +153,9 @@ export function loadSettings() {
     const raw = typeof localStorage !== "undefined" && localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const merged = { ...DEFAULT_SETTINGS, ...parsed };
+    if (!VALID_THEMES.includes(merged.theme)) merged.theme = "system";
+    return merged;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -165,6 +169,20 @@ export function saveSettings(settings) {
   } catch {
     /* ignore */
   }
+}
+
+export function resolveTheme(theme) {
+  if (theme === "light" || theme === "dark") return theme;
+  if (typeof window !== "undefined" && window.matchMedia) {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return "light";
+}
+
+export function applyTheme(theme) {
+  if (typeof document === "undefined") return;
+  const resolved = resolveTheme(theme);
+  document.documentElement.setAttribute("data-theme", resolved);
 }
 
 export function formatMetricsEntry(reqs, errs, rl, prevReqs, prevErrs, prevRl) {

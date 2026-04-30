@@ -10,6 +10,8 @@ import {
   toCsv,
   loadSettings,
   saveSettings,
+  resolveTheme,
+  applyTheme,
 } from "./metrics";
 
 describe("computeRate", () => {
@@ -293,14 +295,21 @@ describe("loadSettings / saveSettings", () => {
     expect(s.pollInterval).toBe(1500);
     expect(s.maxLogSize).toBe(100);
     expect(s.chartWindow).toBe(30);
+    expect(s.theme).toBe("system");
   });
 
-  it("round-trips saved settings", () => {
-    saveSettings({ pollInterval: 3000, maxLogSize: 200, chartWindow: 60 });
+  it("round-trips saved settings including theme", () => {
+    saveSettings({ pollInterval: 3000, maxLogSize: 200, chartWindow: 60, theme: "dark" });
     const s = loadSettings();
     expect(s.pollInterval).toBe(3000);
     expect(s.maxLogSize).toBe(200);
     expect(s.chartWindow).toBe(60);
+    expect(s.theme).toBe("dark");
+  });
+
+  it("coerces unknown theme value back to system", () => {
+    saveSettings({ pollInterval: 1500, maxLogSize: 100, chartWindow: 30, theme: "neon" });
+    expect(loadSettings().theme).toBe("system");
   });
 
   it("falls back to defaults when localStorage has invalid JSON", () => {
@@ -309,5 +318,35 @@ describe("loadSettings / saveSettings", () => {
     expect(s.pollInterval).toBe(1500);
     expect(s.maxLogSize).toBe(100);
     expect(s.chartWindow).toBe(30);
+    expect(s.theme).toBe("system");
+  });
+});
+
+describe("resolveTheme / applyTheme", () => {
+  beforeEach(() => {
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  it("resolveTheme returns explicit theme when light or dark", () => {
+    expect(resolveTheme("light")).toBe("light");
+    expect(resolveTheme("dark")).toBe("dark");
+  });
+
+  it("resolveTheme follows prefers-color-scheme when system", () => {
+    const original = window.matchMedia;
+    window.matchMedia = (q) => ({
+      matches: q.includes("dark"),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    });
+    expect(resolveTheme("system")).toBe("dark");
+    window.matchMedia = original;
+  });
+
+  it("applyTheme writes data-theme on documentElement", () => {
+    applyTheme("dark");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    applyTheme("light");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   });
 });

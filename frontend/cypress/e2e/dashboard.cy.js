@@ -29,4 +29,14 @@ describe("EdgeForge Dashboard", () => {
     cy.contains("Errors / sec").should("be.visible");
     cy.contains("Rate Limited / sec").should("be.visible");
   });
+
+  it("toggles dark mode and persists across reload", () => {
+    cy.window().then((win) => win.localStorage.clear());
+    cy.reload();
+    cy.contains("Show Settings").click();
+    cy.get('select[aria-label="Theme"]').select("dark");
+    cy.get("html").should("have.attr", "data-theme", "dark");
+    cy.reload();
+    cy.get("html").should("have.attr", "data-theme", "dark");
+  });
 });

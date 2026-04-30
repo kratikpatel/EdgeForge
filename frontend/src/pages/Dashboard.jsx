@@ -9,23 +9,30 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { API_BASE } from "../config";
-import { aggregateByService, filterRequestLog, toCsv, loadSettings, saveSettings } from "../utils/metrics";
+import {
+  aggregateByService,
+  filterRequestLog,
+  toCsv,
+  loadSettings,
+  saveSettings,
+  applyTheme,
+} from "../utils/metrics";
 
 function Card({ title, children }) {
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
+        border: "1px solid var(--border)",
         borderRadius: 12,
         padding: 16,
-        background: "white",
-        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        background: "var(--bg-card)",
+        boxShadow: "var(--shadow-card)",
       }}
     >
       <div
         style={{
           fontSize: 14,
-          color: "#374151",
+          color: "var(--text-strong)",
           marginBottom: 10,
           fontWeight: 600,
         }}
@@ -46,6 +53,17 @@ export default function Dashboard() {
     setSettings(next);
     saveSettings(next);
   }
+
+  useEffect(() => {
+    applyTheme(settings?.theme);
+    if (settings?.theme !== "system" || typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => applyTheme("system");
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, [settings?.theme]);
 
   const [health, setHealth] = useState({
     state: "loading",
@@ -335,11 +353,11 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f9fafb" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-page)" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
         <header style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>EdgeForge Dashboard</h1>
-          <p style={{ marginTop: 6, color: "#6b7280" }}>
+          <p style={{ marginTop: 6, color: "var(--text-secondary)" }}>
             Sprint 2: Traffic simulation, request logging, and real-time
             charts.
           </p>
@@ -351,13 +369,13 @@ export default function Dashboard() {
             <button
               onClick={() => setSettingsOpen(!settingsOpen)}
               style={{
-                border: "1px solid #e5e7eb",
-                background: "white",
+                border: "1px solid var(--border)",
+                background: "var(--bg-card)",
                 padding: "6px 12px",
                 borderRadius: 8,
                 cursor: "pointer",
                 fontSize: 12,
-                color: "#374151",
+                color: "var(--text-strong)",
                 marginBottom: settingsOpen ? 12 : 0,
               }}
             >
@@ -371,7 +389,7 @@ export default function Dashboard() {
                     aria-label="Poll interval"
                     value={settings.pollInterval}
                     onChange={(e) => updateSetting("pollInterval", Number(e.target.value))}
-                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
                   >
                     <option value={1000}>1s</option>
                     <option value={1500}>1.5s</option>
@@ -384,7 +402,7 @@ export default function Dashboard() {
                     aria-label="Max log entries"
                     value={settings.maxLogSize}
                     onChange={(e) => updateSetting("maxLogSize", Number(e.target.value))}
-                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
                   >
                     <option value={50}>50</option>
                     <option value={100}>100</option>
@@ -397,11 +415,24 @@ export default function Dashboard() {
                     aria-label="Chart history window"
                     value={settings.chartWindow}
                     onChange={(e) => updateSetting("chartWindow", Number(e.target.value))}
-                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
                   >
                     <option value={15}>15</option>
                     <option value={30}>30</option>
                     <option value={60}>60</option>
+                  </select>
+                </label>
+                <label>
+                  Theme:{" "}
+                  <select
+                    aria-label="Theme"
+                    value={settings.theme}
+                    onChange={(e) => updateSetting("theme", e.target.value)}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
+                  >
+                    <option value="system">System</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
                   </select>
                 </label>
               </div>
@@ -429,7 +460,7 @@ export default function Dashboard() {
               <span style={{ fontWeight: 700 }}>{health.message}</span>
             </div>
             <div
-              style={{ marginTop: 10, color: "#6b7280", fontSize: 13 }}
+              style={{ marginTop: 10, color: "var(--text-secondary)", fontSize: 13 }}
             >
               {API_BASE} <span style={{ marginLeft: 8 }}>|</span>{" "}
               <code>GET /health</code>
@@ -463,7 +494,7 @@ export default function Dashboard() {
 
           {/* Send Test Request */}
           <Card title="Send Test Request">
-            <p style={{ marginTop: 0, color: "#6b7280" }}>
+            <p style={{ marginTop: 0, color: "var(--text-secondary)" }}>
               Sends a request to the gateway to simulate routing. Endpoint:{" "}
               <code>POST /api/v1/request</code>
             </p>
@@ -521,7 +552,7 @@ export default function Dashboard() {
                 style={{
                   fontSize: 13,
                   fontWeight: 600,
-                  color: "#374151",
+                  color: "var(--text-strong)",
                   marginBottom: 6,
                 }}
               >
@@ -532,8 +563,8 @@ export default function Dashboard() {
                   margin: 0,
                   padding: 12,
                   borderRadius: 10,
-                  background: "#111827",
-                  color: "#e5e7eb",
+                  background: "var(--bg-code)",
+                  color: "var(--text-on-code)",
                   overflowX: "auto",
                   minHeight: 70,
                 }}
@@ -547,7 +578,7 @@ export default function Dashboard() {
 
           {/* Traffic Simulation */}
           <Card title="Traffic Simulation">
-            <p style={{ marginTop: 0, color: "#6b7280" }}>
+            <p style={{ marginTop: 0, color: "var(--text-secondary)" }}>
               Send bulk requests to simulate different traffic patterns.
             </p>
 
@@ -590,8 +621,8 @@ export default function Dashboard() {
                   gap: 10,
                 }}
               >
-                <div style={{ padding: 10, background: "#f3f4f6", borderRadius: 8, textAlign: "center" }}>
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>Total</div>
+                <div style={{ padding: 10, background: "var(--bg-muted)", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>Total</div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{simResults.total}</div>
                 </div>
                 <div style={{ padding: 10, background: "#ecfdf5", borderRadius: 8, textAlign: "center" }}>
@@ -631,7 +662,7 @@ export default function Dashboard() {
                       alignItems: "center",
                     }}
                   >
-                    <label style={{ fontSize: 12, color: "#6b7280" }}>
+                    <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                       Filter by service:{" "}
                       <select
                         aria-label="Filter by service"
@@ -643,7 +674,7 @@ export default function Dashboard() {
                           marginLeft: 4,
                           padding: "4px 8px",
                           borderRadius: 6,
-                          border: "1px solid #e5e7eb",
+                          border: "1px solid var(--border)",
                           fontSize: 12,
                         }}
                       >
@@ -655,7 +686,7 @@ export default function Dashboard() {
                         ))}
                       </select>
                     </label>
-                    <label style={{ fontSize: 12, color: "#6b7280" }}>
+                    <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                       Status:{" "}
                       <select
                         aria-label="Filter by status"
@@ -667,7 +698,7 @@ export default function Dashboard() {
                           marginLeft: 4,
                           padding: "4px 8px",
                           borderRadius: 6,
-                          border: "1px solid #e5e7eb",
+                          border: "1px solid var(--border)",
                           fontSize: 12,
                         }}
                       >
@@ -688,13 +719,13 @@ export default function Dashboard() {
                       style={{
                         padding: "4px 8px",
                         borderRadius: 6,
-                        border: "1px solid #e5e7eb",
+                        border: "1px solid var(--border)",
                         fontSize: 12,
                         flex: "1 1 160px",
                         minWidth: 120,
                       }}
                     />
-                    <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                       Showing {visibleLog.length} of {requestLog.length}
                     </span>
                   </div>
@@ -703,7 +734,7 @@ export default function Dashboard() {
                 maxHeight: 300,
                 overflowY: "auto",
                 borderRadius: 8,
-                border: "1px solid #e5e7eb",
+                border: "1px solid var(--border)",
               }}
             >
               <table
@@ -716,16 +747,16 @@ export default function Dashboard() {
                 <thead>
                   <tr
                     style={{
-                      background: "#f9fafb",
+                      background: "var(--bg-header-row)",
                       position: "sticky",
                       top: 0,
                     }}
                   >
-                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Time</th>
-                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Request ID</th>
-                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Routed To</th>
-                    <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb" }}>Status</th>
-                    <th style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid #e5e7eb" }}>Latency</th>
+                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid var(--border)" }}>Time</th>
+                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid var(--border)" }}>Request ID</th>
+                    <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid var(--border)" }}>Routed To</th>
+                    <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid var(--border)" }}>Status</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--border)" }}>Latency</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -736,7 +767,7 @@ export default function Dashboard() {
                         style={{
                           padding: 20,
                           textAlign: "center",
-                          color: "#9ca3af",
+                          color: "var(--text-muted)",
                         }}
                       >
                         {requestLog.length === 0
@@ -749,9 +780,9 @@ export default function Dashboard() {
                       <tr
                         key={i}
                         onClick={() => setSelectedRequest(entry)}
-                        style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer" }}
+                        style={{ borderBottom: "1px solid var(--border-soft)", cursor: "pointer" }}
                       >
-                        <td style={{ padding: "6px 10px", color: "#6b7280" }}>{entry.time}</td>
+                        <td style={{ padding: "6px 10px", color: "var(--text-secondary)" }}>{entry.time}</td>
                         <td style={{ padding: "6px 10px" }}>
                           <code style={{ fontSize: 12 }}>{entry.id}</code>
                         </td>
@@ -784,7 +815,7 @@ export default function Dashboard() {
                           style={{
                             padding: "6px 10px",
                             textAlign: "right",
-                            color: "#6b7280",
+                            color: "var(--text-secondary)",
                           }}
                         >
                           {entry.latency}ms
@@ -800,13 +831,13 @@ export default function Dashboard() {
                 <button
                   onClick={() => setRequestLog([])}
                   style={{
-                    border: "1px solid #e5e7eb",
-                    background: "white",
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-card)",
                     padding: "6px 12px",
                     borderRadius: 8,
                     cursor: "pointer",
                     fontSize: 12,
-                    color: "#6b7280",
+                    color: "var(--text-secondary)",
                   }}
                 >
                   Clear Log
@@ -825,13 +856,13 @@ export default function Dashboard() {
                 }}
                 disabled={requestLog.length === 0}
                 style={{
-                  border: "1px solid #e5e7eb",
-                  background: requestLog.length === 0 ? "#f3f4f6" : "white",
+                  border: "1px solid var(--border)",
+                  background: requestLog.length === 0 ? "var(--bg-muted)" : "var(--bg-card)",
                   padding: "6px 12px",
                   borderRadius: 8,
                   cursor: requestLog.length === 0 ? "not-allowed" : "pointer",
                   fontSize: 12,
-                  color: "#6b7280",
+                  color: "var(--text-secondary)",
                   opacity: requestLog.length === 0 ? 0.6 : 1,
                 }}
               >
@@ -846,14 +877,14 @@ export default function Dashboard() {
           {/* Per-Service Metrics */}
           <Card title="Per-Service Metrics">
             {requestLog.length === 0 ? (
-              <div style={{ color: "#6b7280", fontSize: 13, padding: "8px 0" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: 13, padding: "8px 0" }}>
                 Send requests to see per-service breakdown.
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ textAlign: "left", color: "#6b7280" }}>
+                    <tr style={{ textAlign: "left", color: "var(--text-secondary)" }}>
                       <th style={{ padding: "6px 8px" }}>Service</th>
                       <th style={{ padding: "6px 8px" }}>Total</th>
                       <th style={{ padding: "6px 8px" }}>Success</th>
@@ -864,7 +895,7 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {aggregateByService(requestLog).map((row) => (
-                      <tr key={row.service} style={{ borderTop: "1px solid #f3f4f6" }}>
+                      <tr key={row.service} style={{ borderTop: "1px solid var(--border-soft)" }}>
                         <td style={{ padding: "8px", fontWeight: 600 }}>{row.service}</td>
                         <td style={{ padding: "8px" }}>{row.total}</td>
                         <td style={{ padding: "8px", color: "#16a34a" }}>{row.success}</td>
@@ -952,7 +983,7 @@ export default function Dashboard() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.5)",
+            background: "var(--modal-overlay)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -963,14 +994,14 @@ export default function Dashboard() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "white",
+              background: "var(--bg-card)",
               borderRadius: 12,
               padding: 24,
               maxWidth: 600,
               width: "100%",
               maxHeight: "80vh",
               overflowY: "auto",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+              boxShadow: "var(--shadow-modal)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -978,8 +1009,8 @@ export default function Dashboard() {
               <button
                 onClick={() => setSelectedRequest(null)}
                 style={{
-                  border: "1px solid #e5e7eb",
-                  background: "white",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-card)",
                   padding: "6px 12px",
                   borderRadius: 6,
                   cursor: "pointer",
@@ -1011,14 +1042,14 @@ export default function Dashboard() {
             >
               Copy Request ID
             </button>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Response</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-strong)", marginBottom: 6 }}>Response</div>
             <pre
               style={{
                 margin: 0,
                 padding: 12,
                 borderRadius: 8,
-                background: "#111827",
-                color: "#e5e7eb",
+                background: "var(--bg-code)",
+                color: "var(--text-on-code)",
                 fontSize: 12,
                 overflowX: "auto",
                 maxHeight: 300,
