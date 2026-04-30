@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"edgeforge/backend/internal/loadbalancer"
 	"edgeforge/backend/internal/metrics"
@@ -25,24 +26,26 @@ func ForwardWithRetry(
 	serviceName string,
 	requestBody any,
 	maxAttempts int,
+	circuitFailureThreshold int,
+	circuitCooldown time.Duration,
 ) (*ForwardResult, error) {
 	tried := make(map[string]bool)
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		healthyInstances, err := serviceRegistry.GetHealthyInstances(serviceName)
+		availableInstances, err := serviceRegistry.GetAvailableInstances(serviceName, circuitCooldown)
 		if err != nil {
 			return nil, err
 		}
 
 		available := make([]registry.ServiceInstance, 0)
-		for _, instance := range healthyInstances {
+		for _, instance := range availableInstances {
 			if !tried[instance.Name] {
 				available = append(available, instance)
 			}
 		}
 
 		if len(available) == 0 {
-			return nil, fmt.Errorf("no remaining healthy instances available for service %q", serviceName)
+			return nil, fmt.Errorf("no remaining available instances for service %q", serviceName)
 		}
 
 		selected := balancer.Select(available)
@@ -62,6 +65,10 @@ func ForwardWithRetry(
 		}
 
 		if err == nil {
+			if err := serviceRegistry.RecordInstanceSuccess(serviceName, selected.Name); err != nil {
+				return nil, err
+			}
+
 			return &ForwardResult{
 				SelectedInstance: selected,
 				BackendResponse:  result,
@@ -69,6 +76,10 @@ func ForwardWithRetry(
 		}
 
 		metricsCollector.IncInstanceFailures(serviceName, selected.Name)
+
+		if err := serviceRegistry.RecordInstanceFailure(serviceName, selected.Name, circuitFailureThreshold); err != nil {
+			return nil, err
+		}
 	}
 
 	return nil, fmt.Errorf("all retry attempts failed for service %q", serviceName)

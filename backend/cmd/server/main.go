@@ -242,6 +242,8 @@ func main() {
 			serviceName,
 			body,
 			cfg.RetryCount,
+			cfg.CircuitBreakerFailureThreshold,
+			cfg.CircuitBreakerCooldown,
 		)
 		if err != nil {
 			m.IncErrors()

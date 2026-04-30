@@ -13,6 +13,8 @@ func TestLoadReturnsDefaultConfigValues(t *testing.T) {
 	t.Setenv("RATE_LIMIT_WINDOW", "")
 	t.Setenv("HEALTH_CHECK_INTERVAL", "")
 	t.Setenv("SHUTDOWN_TIMEOUT", "")
+	t.Setenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "")
+	t.Setenv("CIRCUIT_BREAKER_COOLDOWN", "")
 
 	cfg := Load()
 
@@ -42,6 +44,13 @@ func TestLoadReturnsDefaultConfigValues(t *testing.T) {
 	if cfg.ShutdownTimeout != 5*time.Second {
 		t.Fatalf("expected ShutdownTimeout to be 5s, got %s", cfg.ShutdownTimeout)
 	}
+	if cfg.CircuitBreakerFailureThreshold != 3 {
+		t.Fatalf("expected CircuitBreakerFailureThreshold to be 3, got %d", cfg.CircuitBreakerFailureThreshold)
+	}
+
+	if cfg.CircuitBreakerCooldown != 10*time.Second {
+		t.Fatalf("expected CircuitBreakerCooldown to be 10s, got %s", cfg.CircuitBreakerCooldown)
+	}
 }
 
 func TestLoadReadsEnvironmentVariables(t *testing.T) {
@@ -52,6 +61,8 @@ func TestLoadReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("RATE_LIMIT_WINDOW", "30s")
 	t.Setenv("HEALTH_CHECK_INTERVAL", "15s")
 	t.Setenv("SHUTDOWN_TIMEOUT", "8s")
+	t.Setenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
+	t.Setenv("CIRCUIT_BREAKER_COOLDOWN", "20s")
 
 	cfg := Load()
 
@@ -81,6 +92,13 @@ func TestLoadReadsEnvironmentVariables(t *testing.T) {
 	if cfg.ShutdownTimeout != 8*time.Second {
 		t.Fatalf("expected ShutdownTimeout to be 8s, got %s", cfg.ShutdownTimeout)
 	}
+	if cfg.CircuitBreakerFailureThreshold != 5 {
+		t.Fatalf("expected CircuitBreakerFailureThreshold to be 5, got %d", cfg.CircuitBreakerFailureThreshold)
+	}
+
+	if cfg.CircuitBreakerCooldown != 20*time.Second {
+		t.Fatalf("expected CircuitBreakerCooldown to be 20s, got %s", cfg.CircuitBreakerCooldown)
+	}
 }
 
 func TestLoadFallsBackWhenEnvironmentVariablesAreInvalid(t *testing.T) {
@@ -90,6 +108,8 @@ func TestLoadFallsBackWhenEnvironmentVariablesAreInvalid(t *testing.T) {
 	t.Setenv("RATE_LIMIT_WINDOW", "bad-duration")
 	t.Setenv("HEALTH_CHECK_INTERVAL", "bad-duration")
 	t.Setenv("SHUTDOWN_TIMEOUT", "bad-duration")
+	t.Setenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "bad-int")
+	t.Setenv("CIRCUIT_BREAKER_COOLDOWN", "bad-duration")
 
 	cfg := Load()
 
@@ -111,5 +131,15 @@ func TestLoadFallsBackWhenEnvironmentVariablesAreInvalid(t *testing.T) {
 
 	if cfg.HealthCheckInterval != 5*time.Second {
 		t.Fatalf("expected fallback HealthCheckInterval to be 5s, got %s", cfg.HealthCheckInterval)
+	}
+	if cfg.ShutdownTimeout != 5*time.Second {
+		t.Fatalf("expected fallback ShutdownTimeout to be 5s, got %s", cfg.ShutdownTimeout)
+	}
+	if cfg.CircuitBreakerFailureThreshold != 3 {
+		t.Fatalf("expected fallback CircuitBreakerFailureThreshold to be 3, got %d", cfg.CircuitBreakerFailureThreshold)
+	}
+
+	if cfg.CircuitBreakerCooldown != 10*time.Second {
+		t.Fatalf("expected fallback CircuitBreakerCooldown to be 10s, got %s", cfg.CircuitBreakerCooldown)
 	}
 }
