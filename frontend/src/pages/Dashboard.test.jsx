@@ -401,4 +401,15 @@ describe("Dashboard", () => {
     fireEvent.click(screen.getByLabelText("Dismiss alert"));
     expect(screen.queryByRole("alert", { name: "Error rate alert" })).not.toBeInTheDocument();
   });
+
+  it("renders the Chaos Controls panel with empty state", () => {
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ status: "ok" }),
+    });
+    render(<Dashboard />);
+    expect(screen.getByText("Chaos Controls")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Waiting for services\. Make sure the gateway is running\./)
+    ).toBeInTheDocument();
+  });
 });
