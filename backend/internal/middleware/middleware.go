@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"log"
 	"net/http"
 	"time"
+
+	"edgeforge/backend/internal/logger"
 )
 
 type ctxKey string
@@ -46,19 +47,7 @@ func WithRequestIDAndLogging(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), requestIDKey, reqID)
 		r = r.WithContext(ctx)
 
-		// CORS
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		// Add request id to every response
 		w.Header().Set("X-Request-Id", reqID)
-		// CORS
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -72,7 +61,14 @@ func WithRequestIDAndLogging(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 
 		latency := time.Since(start)
-		log.Printf("requestId=%s method=%s path=%s status=%d latency=%s",
-			reqID, r.Method, r.URL.Path, rec.status, latency)
+
+		logger.Info("http_request_completed", logger.Fields{
+			"requestId":  reqID,
+			"method":     r.Method,
+			"path":       r.URL.Path,
+			"status":     rec.status,
+			"latencyMs":  latency.Milliseconds(),
+			"remoteAddr": r.RemoteAddr,
+		})
 	})
 }

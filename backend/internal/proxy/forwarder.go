@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"edgeforge/backend/internal/loadbalancer"
+	"edgeforge/backend/internal/logger"
 	"edgeforge/backend/internal/metrics"
 	"edgeforge/backend/internal/registry"
 )
@@ -34,6 +35,11 @@ func ForwardWithRetry(
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		availableInstances, err := serviceRegistry.GetAvailableInstances(serviceName, circuitCooldown)
 		if err != nil {
+			logger.Error("proxy_no_available_instances", logger.Fields{
+				"service": serviceName,
+				"attempt": attempt + 1,
+				"error":   err.Error(),
+			})
 			return nil, err
 		}
 
@@ -45,29 +51,68 @@ func ForwardWithRetry(
 		}
 
 		if len(available) == 0 {
-			return nil, fmt.Errorf("no remaining available instances for service %q", serviceName)
+			err := fmt.Errorf("no remaining available instances for service %q", serviceName)
+
+			logger.Error("proxy_no_remaining_instances", logger.Fields{
+				"service": serviceName,
+				"attempt": attempt + 1,
+				"error":   err.Error(),
+			})
+
+			return nil, err
 		}
 
 		selected := balancer.Select(available)
 		tried[selected.Name] = true
 
+		logger.Info("proxy_forward_attempt_started", logger.Fields{
+			"service":      serviceName,
+			"instance":     selected.Name,
+			"targetUrl":    selected.URL,
+			"attempt":      attempt + 1,
+			"maxAttempts":  maxAttempts,
+			"circuitState": selected.CircuitState,
+		})
+
 		metricsCollector.IncServiceRequests(serviceName)
 		metricsCollector.IncInstanceRequests(serviceName, selected.Name)
 
 		if err := serviceRegistry.IncrementActiveRequests(serviceName, selected.Name); err != nil {
+			logger.Error("proxy_increment_active_requests_failed", logger.Fields{
+				"service":  serviceName,
+				"instance": selected.Name,
+				"error":    err.Error(),
+			})
 			return nil, err
 		}
 
 		result, err := forwardToInstance(client, selected, requestBody)
 
 		if decErr := serviceRegistry.DecrementActiveRequests(serviceName, selected.Name); decErr != nil {
+			logger.Error("proxy_decrement_active_requests_failed", logger.Fields{
+				"service":  serviceName,
+				"instance": selected.Name,
+				"error":    decErr.Error(),
+			})
 			return nil, decErr
 		}
 
 		if err == nil {
 			if err := serviceRegistry.RecordInstanceSuccess(serviceName, selected.Name); err != nil {
+				logger.Error("proxy_record_success_failed", logger.Fields{
+					"service":  serviceName,
+					"instance": selected.Name,
+					"error":    err.Error(),
+				})
 				return nil, err
 			}
+
+			logger.Info("proxy_forward_attempt_succeeded", logger.Fields{
+				"service":   serviceName,
+				"instance":  selected.Name,
+				"targetUrl": selected.URL,
+				"attempt":   attempt + 1,
+			})
 
 			return &ForwardResult{
 				SelectedInstance: selected,
@@ -77,12 +122,33 @@ func ForwardWithRetry(
 
 		metricsCollector.IncInstanceFailures(serviceName, selected.Name)
 
-		if err := serviceRegistry.RecordInstanceFailure(serviceName, selected.Name, circuitFailureThreshold); err != nil {
-			return nil, err
+		if recordErr := serviceRegistry.RecordInstanceFailure(serviceName, selected.Name, circuitFailureThreshold); recordErr != nil {
+			logger.Error("proxy_record_failure_failed", logger.Fields{
+				"service":  serviceName,
+				"instance": selected.Name,
+				"error":    recordErr.Error(),
+			})
+			return nil, recordErr
 		}
+
+		logger.Error("proxy_forward_attempt_failed", logger.Fields{
+			"service":   serviceName,
+			"instance":  selected.Name,
+			"targetUrl": selected.URL,
+			"attempt":   attempt + 1,
+			"error":     err.Error(),
+		})
 	}
 
-	return nil, fmt.Errorf("all retry attempts failed for service %q", serviceName)
+	err := fmt.Errorf("all retry attempts failed for service %q", serviceName)
+
+	logger.Error("proxy_all_retry_attempts_failed", logger.Fields{
+		"service":     serviceName,
+		"maxAttempts": maxAttempts,
+		"error":       err.Error(),
+	})
+
+	return nil, err
 }
 
 func forwardToInstance(
@@ -104,7 +170,10 @@ func forwardToInstance(
 
 	forwardReq.Header.Set("Content-Type", "application/json")
 
+	start := time.Now()
 	resp, err := client.Do(forwardReq)
+	latency := time.Since(start)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed_to_forward_request: %w", err)
 	}
@@ -119,6 +188,13 @@ func forwardToInstance(
 	if err := json.Unmarshal(respBytes, &backendResp); err != nil {
 		return nil, fmt.Errorf("invalid_backend_response: %w", err)
 	}
+
+	logger.Info("proxy_backend_response_received", logger.Fields{
+		"instance":  instance.Name,
+		"targetUrl": forwardURL,
+		"status":    resp.StatusCode,
+		"latencyMs": latency.Milliseconds(),
+	})
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("backend_service_error")
